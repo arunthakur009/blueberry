@@ -18,10 +18,20 @@ all: $(STAGEDIR)/bin/busybox
 
 $(STAGEDIR)/bin/busybox: $(BUSYBOX_SRC)/Makefile
 	@echo "[busybox] generating config"
-	@# Copy our fragment as the starting .config; silentoldconfig then fills in
-	@# Kconfig defaults for every symbol not present in the fragment — no prompts.
-	@cp $(BB_CONFIG) $(BUSYBOX_SRC)/.config
-	@$(MAKE) -C $(BUSYBOX_SRC) CC="$(MUSL_GCC)" silentoldconfig
+	@# defconfig gives a complete .config (all Kconfig defaults); we then
+	@# patch in our fragment line-by-line.  No interactive prompts.
+	@$(MAKE) -C $(BUSYBOX_SRC) CC="$(MUSL_GCC)" defconfig
+	@while IFS= read -r line; do \
+	    case "$$line" in \
+	        CONFIG_*=*) \
+	            key=$${line%%=*}; \
+	            if grep -q "^$$key=" $(BUSYBOX_SRC)/.config; then \
+	                sed -i "s|^$$key=.*|$$line|" $(BUSYBOX_SRC)/.config; \
+	            elif grep -q "^# $$key is not set" $(BUSYBOX_SRC)/.config; then \
+	                sed -i "s|^# $$key is not set|$$line|" $(BUSYBOX_SRC)/.config; \
+	            fi ;; \
+	    esac; \
+	done < $(BB_CONFIG)
 	@echo "[busybox] building"
 	@$(MAKE) -C $(BUSYBOX_SRC) \
 	    CC="$(MUSL_GCC)" \
