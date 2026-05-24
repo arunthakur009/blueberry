@@ -52,21 +52,42 @@ func Parse(path string) (*Recipe, error) {
 		Arch:    []string{"x86_64", "aarch64"},
 	}
 	sc := bufio.NewScanner(f)
+	var pendingKey, pendingVal string
 	for sc.Scan() {
-		line := strings.TrimSpace(sc.Text())
-		if line == "" || strings.HasPrefix(line, "#") {
+		line := sc.Text()
+		trimmed := strings.TrimSpace(line)
+
+		// Accumulate multi-line array values
+		if pendingKey != "" {
+			pendingVal += " " + trimmed
+			if strings.Contains(trimmed, ")") {
+				line = pendingKey + "=" + pendingVal
+				trimmed = line
+				pendingKey, pendingVal = "", ""
+			} else {
+				continue
+			}
+		}
+
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
 			continue
 		}
-		// Stop at function definitions
-		if strings.HasSuffix(line, "() {") || strings.HasSuffix(line, "(){") {
+		if strings.HasSuffix(trimmed, "() {") || strings.HasSuffix(trimmed, "(){") {
 			break
 		}
-		idx := strings.IndexByte(line, '=')
+		idx := strings.IndexByte(trimmed, '=')
 		if idx < 0 {
 			continue
 		}
-		key := strings.TrimSpace(line[:idx])
-		val := strings.TrimSpace(line[idx+1:])
+		key := strings.TrimSpace(trimmed[:idx])
+		val := strings.TrimSpace(trimmed[idx+1:])
+
+		// Detect unclosed array — accumulate until closing )
+		if strings.HasPrefix(val, "(") && !strings.Contains(val, ")") {
+			pendingKey = key
+			pendingVal = val
+			continue
+		}
 
 		switch key {
 		case "name":
@@ -107,6 +128,7 @@ type BuildOptions struct {
 	Arch    string // target arch
 	Jobs    int    // parallel make jobs (0 = nproc)
 	Output  string // directory to write the .bb file into
+	Topdir  string // repo root, exposed as $TOPDIR in BBUILD scripts
 }
 
 // Build executes a BBUILD recipe and writes the resulting .bb archive.
@@ -141,8 +163,14 @@ func Build(recipe *Recipe, opts BuildOptions) (string, error) {
 		}
 	}
 
-	// Download sources
+	// Download sources (expand $name/$version/$release in URLs)
+	recipeDir := filepath.Dir(recipe.Path)
 	for i, src := range recipe.Source {
+		src = expandRecipeVars(src, recipe)
+		// Resolve relative paths against the BBUILD directory
+		if !strings.HasPrefix(src, "http://") && !strings.HasPrefix(src, "https://") && !filepath.IsAbs(src) {
+			src = filepath.Join(recipeDir, src)
+		}
 		if err := fetchSource(src, srcDir, safeGet(recipe.Checksums, i)); err != nil {
 			return "", fmt.Errorf("fetch %s: %w", src, err)
 		}
@@ -225,9 +253,17 @@ package
 }
 
 func buildEnv(r *Recipe, srcDir, pkgDir string, opts BuildOptions) []string {
+	home := os.Getenv("HOME")
+	if home == "" {
+		home = "/root"
+	}
+	hostPath := os.Getenv("PATH")
+	if hostPath == "" {
+		hostPath = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+	}
 	return []string{
-		"HOME=/root",
-		"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+		"HOME=" + home,
+		"PATH=" + hostPath,
 		"LANG=C",
 		"LC_ALL=C",
 		"srcdir=" + srcDir,
@@ -239,6 +275,7 @@ func buildEnv(r *Recipe, srcDir, pkgDir string, opts BuildOptions) []string {
 		"CFLAGS=-Os -pipe",
 		"CXXFLAGS=-Os -pipe",
 		"ARCH=" + opts.Arch,
+		"TOPDIR=" + opts.Topdir,
 	}
 }
 
@@ -253,10 +290,51 @@ func fetchSource(src, destDir, checksum string) error {
 		if err := cmd.Run(); err != nil {
 			return err
 		}
-		return verifyChecksum(dest, checksum)
+		if err := verifyChecksum(dest, checksum); err != nil {
+			return err
+		}
+		return extractArchive(dest, destDir)
 	}
-	// local file
-	return nil
+	// local file — copy into srcdir
+	dest := filepath.Join(destDir, filepath.Base(src))
+	return copyFile(src, dest)
+}
+
+func extractArchive(path, destDir string) error {
+	name := strings.ToLower(filepath.Base(path))
+	var cmd *exec.Cmd
+	switch {
+	case strings.HasSuffix(name, ".tar.gz") || strings.HasSuffix(name, ".tgz"):
+		cmd = exec.Command("tar", "-xzf", path, "-C", destDir)
+	case strings.HasSuffix(name, ".tar.bz2") || strings.HasSuffix(name, ".tbz2"):
+		cmd = exec.Command("tar", "-xjf", path, "-C", destDir)
+	case strings.HasSuffix(name, ".tar.xz") || strings.HasSuffix(name, ".txz"):
+		cmd = exec.Command("tar", "-xJf", path, "-C", destDir)
+	case strings.HasSuffix(name, ".tar.zst"):
+		cmd = exec.Command("tar", "--zstd", "-xf", path, "-C", destDir)
+	case strings.HasSuffix(name, ".zip"):
+		cmd = exec.Command("unzip", "-q", path, "-d", destDir)
+	default:
+		return nil // not an archive, leave as-is
+	}
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
+}
+
+func copyFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+	_, err = io.Copy(out, in)
+	return err
 }
 
 func verifyChecksum(path, checksum string) error {
@@ -272,6 +350,16 @@ func verifyChecksum(path, checksum string) error {
 		return fmt.Errorf("checksum mismatch for %s: got %s want %s", path, hash, expected)
 	}
 	return nil
+}
+
+func expandRecipeVars(s string, r *Recipe) string {
+	s = strings.ReplaceAll(s, "$name", r.Name)
+	s = strings.ReplaceAll(s, "${name}", r.Name)
+	s = strings.ReplaceAll(s, "$version", r.Version)
+	s = strings.ReplaceAll(s, "${version}", r.Version)
+	s = strings.ReplaceAll(s, "$release", fmt.Sprintf("%d", r.Release))
+	s = strings.ReplaceAll(s, "${release}", fmt.Sprintf("%d", r.Release))
+	return s
 }
 
 func safeGet(ss []string, i int) string {

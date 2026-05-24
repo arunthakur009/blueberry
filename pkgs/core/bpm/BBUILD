@@ -12,9 +12,7 @@ checksums=()
 packager="Blueberry Maintainers <maintainers@blueberry.linux>"
 
 build() {
-    # Source tree is available at build time via the distro build system.
-    # When bootstrapping, bpm is cross-compiled on the host.
-    cd "$srcdir/../../tools/bpm"
+    cd "$TOPDIR/src/bpm"
     CGO_ENABLED=0 go build \
         -ldflags="-s -w -X main.version=$version" \
         -trimpath \

@@ -14,7 +14,7 @@ checksums=("sha256:b8cc24c9574d809e7279c3be349795c5d5ceb6fdf19ca709f80cde50e47de
 packager="Blueberry Maintainers <maintainers@blueberry.linux>"
 
 build() {
-    cd "$name-$version"
+    cd "$srcdir/$name-$version"
     cp "$srcdir/busybox.config" .config
     make EXTRA_CFLAGS="-Os -pipe" \
          CC=musl-gcc \
@@ -22,18 +22,15 @@ build() {
 }
 
 package() {
-    cd "$name-$version"
+    cd "$srcdir/$name-$version"
     install -Dm755 busybox "$pkgdir/bin/busybox"
 
-    # Install applet symlinks
     for applet in $(./busybox --list-full); do
         target="$pkgdir/$applet"
         mkdir -p "$(dirname "$target")"
         ln -sf /bin/busybox "$target"
     done
 
-    # Install suid helper for su/passwd
     install -Dm4755 busybox "$pkgdir/bin/busybox-suid"
-
     install -Dm644 docs/busybox.1 "$pkgdir/usr/share/man/man1/busybox.1"
 }

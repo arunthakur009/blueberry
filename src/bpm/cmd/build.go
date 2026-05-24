@@ -19,6 +19,7 @@ var (
 	buildWorkDir string
 	buildJobs    int
 	buildArch    string
+	buildTopdir  string
 )
 
 func init() {
@@ -26,6 +27,7 @@ func init() {
 	buildCmd.Flags().StringVar(&buildWorkDir, "workdir", "", "build workspace (temp dir if empty)")
 	buildCmd.Flags().IntVarP(&buildJobs, "jobs", "j", 0, "parallel make jobs (default: nproc)")
 	buildCmd.Flags().StringVar(&buildArch, "arch", "", "target architecture")
+	buildCmd.Flags().StringVar(&buildTopdir, "topdir", "", "repo root exposed as $TOPDIR in BBUILD")
 }
 
 func runBuild(_ *cobra.Command, args []string) error {
@@ -41,6 +43,7 @@ func runBuild(_ *cobra.Command, args []string) error {
 		Arch:    buildArch,
 		Jobs:    buildJobs,
 		Output:  buildOutput,
+		Topdir:  buildTopdir,
 	})
 	if err != nil {
 		return err

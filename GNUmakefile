@@ -265,9 +265,11 @@ repo: bpm
 	@echo "[repo] building package index"
 	@mkdir -p $(OBJDIR)/repo
 	@for bbuild in $(shell find $(PKGSDIR) -name BBUILD | sort); do \
+	    PATH="$(MUSL_SYSROOT)/bin:$$PATH" \
 	    $(BPM_BIN) build \
 	        --output $(OBJDIR)/repo \
 	        --arch $(ARCH) \
+	        --topdir $(TOPDIR) \
 	        $$bbuild || exit 1; \
 	done
 	@$(TOPDIR)/tools/mkrepo.sh $(OBJDIR)/repo

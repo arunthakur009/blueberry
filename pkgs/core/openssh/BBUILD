@@ -12,7 +12,7 @@ checksums=("sha256:dd8bd002a379b5d499dfb050dd1fa9af8029e80461f4bb6c523c49973f5a3
 packager="Blueberry Maintainers <maintainers@blueberry.linux>"
 
 build() {
-    cd "$name-$version"
+    cd "$srcdir/$name-$version"
     ./configure \
         --prefix=/usr \
         --sysconfdir=/etc/ssh \
@@ -31,7 +31,7 @@ build() {
 }
 
 package() {
-    cd "$name-$version"
+    cd "$srcdir/$name-$version"
     make DESTDIR="$pkgdir" install
 
     install -Dm755 contrib/ssh-copy-id "$pkgdir/usr/bin/ssh-copy-id"

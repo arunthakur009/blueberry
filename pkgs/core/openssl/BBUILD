@@ -12,7 +12,7 @@ checksums=("sha256:777cd596284c883375a2a7a11bf5d2786fc5413255efab20c50d6ffe6d020
 packager="Blueberry Maintainers <maintainers@blueberry.linux>"
 
 build() {
-    cd "$name-$version"
+    cd "$srcdir/$name-$version"
     CC=musl-gcc ./Configure \
         linux-x86_64 \
         --prefix=/usr \
@@ -28,7 +28,7 @@ build() {
 }
 
 package() {
-    cd "$name-$version"
+    cd "$srcdir/$name-$version"
     make DESTDIR="$pkgdir" install_sw install_ssldirs
 
     # Remove static libs and perl utilities

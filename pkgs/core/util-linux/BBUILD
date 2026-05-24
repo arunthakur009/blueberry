@@ -12,7 +12,7 @@ checksums=("sha256:d78b37a66f5922d70edf3bdfb01a6b33d34ed3c3cafd6628203b2a2b67c8e
 packager="Blueberry Maintainers <maintainers@blueberry.linux>"
 
 build() {
-    cd "$name-$version"
+    cd "$srcdir/$name-$version"
     ./configure \
         --prefix=/usr \
         --bindir=/usr/bin \
@@ -25,6 +25,8 @@ build() {
         --disable-wall \
         --disable-nls \
         --disable-static \
+        --disable-lsfd \
+        --disable-makeinstall-chown \
         --enable-libmount \
         --enable-libblkid \
         --enable-libfdisk \
@@ -36,7 +38,7 @@ build() {
 }
 
 package() {
-    cd "$name-$version"
+    cd "$srcdir/$name-$version"
     make DESTDIR="$pkgdir" install
     rm -f "$pkgdir"/usr/lib/*.a
     # Remove files provided by busybox

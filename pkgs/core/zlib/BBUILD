@@ -7,18 +7,18 @@ license="Zlib"
 arch=("x86_64" "aarch64" "riscv64")
 depends=("musl")
 makedepends=()
-source=("https://zlib.net/zlib-$version.tar.gz")
+source=("https://github.com/madler/zlib/releases/download/v$version/zlib-$version.tar.gz")
 checksums=("sha256:9a93b2b7dfdac77ceba5a558a580e74667dd6fede4585b91eefb60f03b72df23")
 packager="Blueberry Maintainers <maintainers@blueberry.linux>"
 
 build() {
-    cd "$name-$version"
+    cd "$srcdir/$name-$version"
     CC=musl-gcc ./configure --prefix=/usr --shared
     make
 }
 
 package() {
-    cd "$name-$version"
+    cd "$srcdir/$name-$version"
     make DESTDIR="$pkgdir" install
     rm -f "$pkgdir"/usr/lib/*.a
 }
