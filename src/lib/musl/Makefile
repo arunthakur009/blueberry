@@ -32,4 +32,7 @@ $(SYSROOT)/lib/libc.so: $(MUSL_SRC)/Makefile
 	@mkdir -p $(SYSROOT)/lib
 	@ln -sf $(SYSROOT)/usr/lib/libc.so $(SYSROOT)/lib/libc.musl-$(ARCH).so.1 2>/dev/null || true
 	@ln -sf $(SYSROOT)/usr/lib/libc.so $(SYSROOT)/lib/ld-musl-$(ARCH).so.1   2>/dev/null || true
+	@# Convenience symlink: $(SYSROOT)/bin/musl-gcc → usr/bin/musl-gcc
+	@mkdir -p $(SYSROOT)/bin
+	@ln -sf $(SYSROOT)/usr/bin/musl-gcc $(SYSROOT)/bin/musl-gcc 2>/dev/null || true
 	@echo "[musl] sysroot ready at $(SYSROOT)"
