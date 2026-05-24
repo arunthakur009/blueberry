@@ -17,9 +17,9 @@ import (
 )
 
 const (
-	DefaultRoot    = "/"
-	DefaultDBPath  = "/var/lib/bpm/db"
-	DefaultWorld   = "/var/lib/bpm/db/world"
+	DefaultRoot     = "/"
+	DefaultDBPath   = "/var/lib/bpm/db"
+	DefaultWorld    = "/var/lib/bpm/db/world"
 	DefaultCachePkg = "/var/lib/bpm/cache/packages"
 	DefaultCacheIdx = "/var/lib/bpm/cache/indices"
 )

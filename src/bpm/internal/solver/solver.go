@@ -18,8 +18,8 @@ type Plan struct {
 
 // Resolver resolves packages against the repo and installed DB.
 type Resolver struct {
-	db   *db.DB
-	mgr  *repo.Manager
+	db  *db.DB
+	mgr *repo.Manager
 }
 
 // New creates a Resolver.

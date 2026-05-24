@@ -22,19 +22,19 @@ import (
 
 // Recipe is the parsed header of a BBUILD file.
 type Recipe struct {
-	Name         string
-	Version      string
-	Release      int
-	Description  string
-	URL          string
-	License      string
-	Arch         []string
-	Depends      []string
-	MakeDepends  []string
-	Source       []string
-	Checksums    []string
-	Packager     string
-	Path         string // path to the BBUILD file
+	Name        string
+	Version     string
+	Release     int
+	Description string
+	URL         string
+	License     string
+	Arch        []string
+	Depends     []string
+	MakeDepends []string
+	Source      []string
+	Checksums   []string
+	Packager    string
+	Path        string // path to the BBUILD file
 }
 
 // Parse reads a BBUILD file and extracts header variables.

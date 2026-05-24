@@ -62,7 +62,6 @@ func runInstall(cmd *cobra.Command, args []string) error {
 		printPackageList(plan.Upgrade)
 	}
 
-
 	if !installNoConfirm {
 		if !confirm("Proceed?") {
 			fmt.Println("Aborted.")
