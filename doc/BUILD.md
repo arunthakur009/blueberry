@@ -53,8 +53,8 @@ dnf install -y gcc musl-gcc golang wget xz bzip2 zstd cpio bc \
 ```sh
 git clone https://git.blueberry.linux/blueberry/blueberry.git
 cd blueberry
-make world           # build everything
-make install         # install into obj/rootfs/
+make world           # build everything → ../blueberry-build/
+make install         # install into ../blueberry-build/rootfs/
 make iso             # create bootable ISO
 ```
 
@@ -64,30 +64,30 @@ make iso             # create bootable ISO
 
 ### `make fetch`
 
-Downloads all upstream source archives into `obj/src/` and extracts them.
+Downloads all upstream source archives into `../blueberry-build/src/` and extracts them.
 Does NOT start any compilation. Use this to pre-populate on a machine with
 internet access before building air-gapped.
 
 ```
-obj/src/linux-7.0.tar.xz
-obj/src/musl-1.2.5.tar.gz
-obj/src/busybox-1.36.1.tar.bz2
-obj/src/runit-2.1.2.tar.gz
-obj/src/linux-7.0/
-obj/src/musl-1.2.5/
-obj/src/busybox-1.36.1/
-obj/src/admin/runit-2.1.2/
+../blueberry-build/src/linux-7.0.tar.xz
+../blueberry-build/src/musl-1.2.5.tar.gz
+../blueberry-build/src/busybox-1.36.1.tar.bz2
+../blueberry-build/src/runit-2.1.2.tar.gz
+../blueberry-build/src/linux-7.0/
+../blueberry-build/src/musl-1.2.5/
+../blueberry-build/src/busybox-1.36.1/
+../blueberry-build/src/admin/runit-2.1.2/
 ```
 
 ### `make musl`
 
-Builds musl libc from `obj/src/musl-$(MUSL_VERSION)` and installs it into
-`obj/sysroot/`. This sysroot provides:
+Builds musl libc from `../blueberry-build/src/musl-$(MUSL_VERSION)` and installs it into
+`../blueberry-build/sysroot/`. This sysroot provides:
 
-- `obj/sysroot/usr/include/` — musl headers
-- `obj/sysroot/usr/lib/libc.so` — shared libc
-- `obj/sysroot/lib/ld-musl-x86_64.so.1` — dynamic linker symlink
-- `obj/sysroot/bin/musl-gcc` — compiler wrapper
+- `../blueberry-build/sysroot/usr/include/` — musl headers
+- `../blueberry-build/sysroot/usr/lib/libc.so` — shared libc
+- `../blueberry-build/sysroot/lib/ld-musl-x86_64.so.1` — dynamic linker symlink
+- `../blueberry-build/sysroot/bin/musl-gcc` — compiler wrapper
 
 This target must complete before busybox, runit, or any C package can be
 built. The sysroot isolates the OS build from the host's glibc.
@@ -97,21 +97,21 @@ built. The sysroot isolates the OS build from the host's glibc.
 Compiles busybox using `musl-gcc` from the sysroot. Configuration comes
 from `src/busybox/config`. Output:
 
-- `obj/rootfs/bin/busybox` (static binary, typically 1.2–1.8 MB)
-- `obj/rootfs/bin/sh`, `obj/rootfs/bin/ls`, ... (symlinks to busybox)
+- `../blueberry-build/rootfs/bin/busybox` (static binary, typically 1.2–1.8 MB)
+- `../blueberry-build/rootfs/bin/sh`, `.../bin/ls`, ... (symlinks to busybox)
 
 ### `make runit`
 
 Compiles runit using `musl-gcc`. Installs binaries and stage scripts:
 
-- `obj/rootfs/sbin/runit`, `runsv`, `runsvdir`, `sv`, `svlogd`, `chpst`
-- `obj/rootfs/etc/runit/1`, `/2`, `/3`
-- `obj/rootfs/etc/sv/*/run` (service definitions from `src/init/sv/`)
+- `../blueberry-build/rootfs/sbin/runit`, `runsv`, `runsvdir`, `sv`, `svlogd`, `chpst`
+- `../blueberry-build/rootfs/etc/runit/1`, `/2`, `/3`
+- `../blueberry-build/rootfs/etc/sv/*/run` (service definitions from `src/init/sv/`)
 
 ### `make bpm`
 
 Compiles the package manager with `CGO_ENABLED=0` using the Go toolchain.
-Output: `obj/bpm` (a single static binary, typically 4–7 MB before strip).
+Output: `../blueberry-build/bpm` (a single static binary, typically 4–7 MB before strip).
 
 ### `make userland`
 
@@ -124,9 +124,9 @@ from `src/kernel/patches/`, copies `src/kernel/config`, runs `olddefconfig`,
 then builds the kernel with `$(JOBS)` parallel jobs.
 
 Outputs:
-- `obj/boot/vmlinuz` — compressed kernel image
-- `obj/boot/System.map` — symbol map
-- `obj/rootfs/lib/modules/$(LINUX_VERSION)-blueberry/` — kernel modules
+- `../blueberry-build/boot/vmlinuz` — compressed kernel image
+- `../blueberry-build/boot/System.map` — symbol map
+- `../blueberry-build/rootfs/lib/modules/$(LINUX_VERSION)-blueberry/` — kernel modules
 
 This is the longest step (~10 minutes on a modern machine with `JOBS=8`).
 Use `make kernel JOBS=16` to speed it up.
@@ -134,14 +134,14 @@ Use `make kernel JOBS=16` to speed it up.
 ### `make initramfs`
 
 Assembles a minimal initramfs containing:
-- `/bin/busybox` (from obj/rootfs)
+- `/bin/busybox` (from `../blueberry-build/rootfs`)
 - Essential symlinks: `sh`, `mount`, `switch_root`, `mdev`, `blkid`, etc.
 - `/init` (from `src/initramfs/init`)
 - Static device nodes: `/dev/console`, `/dev/null`, `/dev/tty`, `/dev/urandom`
 
 Packs as CPIO, compresses with zstd level 19.
 
-Output: `obj/boot/initramfs.cpio.zst`
+Output: `../blueberry-build/boot/initramfs.cpio.zst`
 
 ### `make world`
 
@@ -150,10 +150,10 @@ This is the default target.
 
 ### `make install`
 
-Copies the `etc/` skeleton into `obj/rootfs/etc/`, installs bpm into
-`obj/rootfs/usr/bin/bpm`, and creates remaining FHS directories.
+Copies the `etc/` skeleton into `../blueberry-build/rootfs/etc/`, installs bpm into
+`../blueberry-build/rootfs/usr/bin/bpm`, and creates remaining FHS directories.
 
-After `install`, `obj/rootfs/` is a complete root filesystem ready for
+After `install`, `../blueberry-build/rootfs/` is a complete root filesystem ready for
 `chroot` or disk imaging.
 
 ### `make iso`
@@ -172,8 +172,8 @@ Builds all BBUILD recipes under `pkgs/` and indexes them:
 ```sh
 make repo
 # Produces:
-#   obj/repo/*.bb       — built packages
-#   obj/repo/BBINDEX.zst — package index
+#   ../blueberry-build/repo/*.bb        — built packages
+#   ../blueberry-build/repo/BBINDEX.zst — package index
 ```
 
 ---
@@ -193,8 +193,8 @@ make LINUX_VERSION=7.1 kernel
 |----------|---------|-------------|
 | `ARCH` | `x86_64` | Target architecture |
 | `JOBS` | `nproc` | Parallel build jobs |
-| `DESTDIR` | `obj/rootfs` | Install root |
-| `OBJDIR` | `obj` | All build artefacts |
+| `DESTDIR` | `../blueberry-build/rootfs` | Install root |
+| `OBJDIR` | `../blueberry-build` | All build artefacts |
 | `LINUX_VERSION` | `7.0` | Linux kernel version |
 | `MUSL_VERSION` | `1.2.5` | musl libc version |
 | `BUSYBOX_VERSION` | `1.36.1` | busybox version |
@@ -251,14 +251,14 @@ on `ARCH`. No separate Go cross-compiler is needed.
 
 ## Incremental Builds
 
-The build system uses stamp files in `obj/.stamp-*` to track completed
+The build system uses stamp files in `../blueberry-build/.stamp-*` to track completed
 steps. If you change a source file, only the affected component rebuilds.
 
 Force a full rebuild of a specific component:
 
 ```sh
-rm obj/.stamp-busybox && make busybox
-rm obj/.stamp-kernel  && make kernel
+rm ../blueberry-build/.stamp-busybox && make busybox
+rm ../blueberry-build/.stamp-kernel  && make kernel
 ```
 
 ---
@@ -268,15 +268,15 @@ rm obj/.stamp-kernel  && make kernel
 1. On a machine with internet access:
    ```sh
    make fetch
-   tar -czf blueberry-sources.tar.gz obj/src/
+   tar -czf blueberry-sources.tar.gz -C .. blueberry-build/src/
    ```
 
 2. Copy `blueberry-sources.tar.gz` to the air-gapped machine.
 
 3. On the air-gapped machine:
    ```sh
-   tar -xzf blueberry-sources.tar.gz
-   make world    # no downloads needed — sources are in obj/src/
+   tar -xzf blueberry-sources.tar.gz -C ..
+   make world    # no downloads needed — sources are in ../blueberry-build/src/
    ```
 
 ---
@@ -285,7 +285,7 @@ rm obj/.stamp-kernel  && make kernel
 
 ```sh
 make clean       # remove build artefacts, keep downloaded sources
-make distclean   # remove everything including obj/src/ (full reset)
+make distclean   # remove everything including ../blueberry-build/ (full reset)
 ```
 
 ---

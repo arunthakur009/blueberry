@@ -79,6 +79,7 @@ world: userland kernel initramfs
 	@echo ""
 	@echo "  ╔══════════════════════════════════════════════╗"
 	@echo "  ║  Blueberry Linux — build complete            ║"
+	@echo "  ║  build dir: $(OBJDIR)"
 	@echo "  ║  vmlinuz:   $(BOOTDIR)/vmlinuz"
 	@echo "  ║  initramfs: $(BOOTDIR)/initramfs.cpio.zst"
 	@echo "  ║  rootfs:    $(STAGEDIR)"

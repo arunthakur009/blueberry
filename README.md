@@ -21,9 +21,10 @@ make _check_tools
 
 # 3. Build everything
 make world        # kernel + musl + busybox + runit + bpm + initramfs
+                  # all output goes to ../blueberry-build/ (never inside the source tree)
 
 # 4. Install into a rootfs
-make install      # populates obj/rootfs/
+make install      # populates ../blueberry-build/rootfs/
 
 # 5. Create a bootable ISO
 make iso          # writes blueberry-YYYYMMDD-x86_64.iso
@@ -40,7 +41,7 @@ make iso          # writes blueberry-YYYYMMDD-x86_64.iso
 | Init | **runit 2.1.x** (default) | Supervision tree, 35 KB, no DSL |
 | Package manager | **bpm** (custom Go) | `.bb` binary packages, BFS solver |
 | Kernel | **Linux 7.0** | LTS, server profile |
-| Distro model | **BSD-style monorepo** | `git clone` → `make world` → bootable |
+| Distro model | **BSD-style monorepo** | `git clone` → `make world` → bootable; build output in `../blueberry-build/` |
 
 Init freedom is a first-class feature. runit is the default; s6, OpenRC,
 and dinit are supported via the package system. systemd is not supported.
