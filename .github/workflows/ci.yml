@@ -152,5 +152,5 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           echo "StrictHostKeyChecking accept-new" >> ~/.ssh/config
           rsync -av --delete /tmp/packages/ \
-            deploy@192.168.0.79:/srv/blueberry/repo/packages/x86_64/
+            deploy@100.98.169.26:/srv/blueberry/repo/packages/x86_64/
           echo "Published."
