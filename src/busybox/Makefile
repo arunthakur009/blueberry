@@ -6,8 +6,10 @@
 #   STAGEDIR     install root (the OS rootfs being assembled)
 #   ARCH
 
-THISDIR  := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
-BB_CONFIG := $(THISDIR)/config
+THISDIR      := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
+# config.full is a complete, validated .config generated from busybox 1.36.1
+# defconfig + our settings.  No kconfig tools required in CI.
+BB_CONFIG    := $(THISDIR)/config.full
 
 # musl-gcc wrapper puts -I/-L for musl automatically
 MUSL_GCC := $(SYSROOT)/bin/musl-gcc
@@ -17,21 +19,8 @@ MUSL_GCC := $(SYSROOT)/bin/musl-gcc
 all: $(STAGEDIR)/bin/busybox
 
 $(STAGEDIR)/bin/busybox: $(BUSYBOX_SRC)/Makefile
-	@echo "[busybox] generating config"
-	@# defconfig gives a complete .config (all Kconfig defaults); we then
-	@# patch in our fragment line-by-line.  No interactive prompts.
-	@$(MAKE) -C $(BUSYBOX_SRC) CC="$(MUSL_GCC)" defconfig
-	@while IFS= read -r line; do \
-	    case "$$line" in \
-	        CONFIG_*=*) \
-	            key=$${line%%=*}; \
-	            if grep -q "^$$key=" $(BUSYBOX_SRC)/.config; then \
-	                sed -i "s|^$$key=.*|$$line|" $(BUSYBOX_SRC)/.config; \
-	            elif grep -q "^# $$key is not set" $(BUSYBOX_SRC)/.config; then \
-	                sed -i "s|^# $$key is not set|$$line|" $(BUSYBOX_SRC)/.config; \
-	            fi ;; \
-	    esac; \
-	done < $(BB_CONFIG)
+	@echo "[busybox] installing config"
+	@cp $(BB_CONFIG) $(BUSYBOX_SRC)/.config
 	@echo "[busybox] building"
 	@$(MAKE) -C $(BUSYBOX_SRC) \
 	    CC="$(MUSL_GCC)" \
