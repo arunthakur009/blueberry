@@ -86,7 +86,7 @@ doc/                Documentation
 | [doc/BPM.md](doc/BPM.md) | bpm user guide and command reference |
 | [doc/BPM-INTERNALS.md](doc/BPM-INTERNALS.md) | bpm module architecture for contributors |
 | [doc/CONTRIBUTING.md](doc/CONTRIBUTING.md) | How to contribute packages and code |
-| [doc/HOSTING.md](doc/HOSTING.md) | Forgejo + Woodpecker CI + Nginx repo server setup |
+| [doc/HOSTING.md](doc/HOSTING.md) | GitHub Actions CI + Nginx repo server setup |
 | [doc/SECURITY.md](doc/SECURITY.md) | Package signing, kernel hardening, SSH hardening |
 
 ---
