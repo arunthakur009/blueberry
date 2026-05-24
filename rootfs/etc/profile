@@ -1,0 +1,10 @@
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PS1='[\u@\h \W]\$ '
+export PAGER=less
+export EDITOR=vi
+
+# Source /etc/profile.d scripts
+for f in /etc/profile.d/*.sh; do
+    [ -r "$f" ] && . "$f"
+done
+unset f

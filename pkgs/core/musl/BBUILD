@@ -1,0 +1,32 @@
+name=musl
+version=1.2.5
+release=1
+description="the musl c library"
+url="https://musl.libc.org/"
+license="MIT"
+arch=("x86_64" "aarch64" "riscv64")
+depends=()
+makedepends=()
+source=("https://musl.libc.org/releases/musl-$version.tar.gz")
+checksums=("sha256:a9a118bbe84d8764da0ea0d28b3ab3fae8477fc7e4085d90102b8596fc7c75e4")
+packager="Blueberry Maintainers <maintainers@blueberry.linux>"
+
+build() {
+    cd "$name-$version"
+    ./configure \
+        --prefix=/usr \
+        --libdir=/usr/lib \
+        --syslibdir=/lib \
+        --enable-wrapper=all
+    make
+}
+
+package() {
+    cd "$name-$version"
+    make DESTDIR="$pkgdir" install
+
+    # Provide /lib/libc.musl-x86_64.so.1 symlink expected by dynamic linker
+    mkdir -p "$pkgdir/lib"
+    ln -sf /usr/lib/libc.so "$pkgdir/lib/libc.musl-x86_64.so.1"
+    ln -sf /usr/lib/libc.so "$pkgdir/lib/ld-musl-x86_64.so.1"
+}

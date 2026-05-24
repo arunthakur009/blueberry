@@ -1,0 +1,50 @@
+name=runit
+version=2.1.2
+release=3
+description="a UNIX init scheme with service supervision"
+url="http://smarden.org/runit/"
+license="BSD-3-Clause"
+arch=("x86_64" "aarch64" "riscv64")
+depends=("musl" "busybox")
+makedepends=()
+source=("http://smarden.org/runit/runit-$version.tar.gz")
+checksums=("sha256:6fd0018d52f3e1a34c9c2a2bb22d4f1c6f6756ad67ee60dab3db83ebcef58981")
+packager="Blueberry Maintainers <maintainers@blueberry.linux>"
+
+build() {
+    cd "admin/runit-$version"
+    # Set musl as compiler
+    echo "musl-gcc" > src/conf-cc
+    echo "musl-gcc" > src/conf-ld
+    make -C src
+}
+
+package() {
+    cd "admin/runit-$version"
+
+    install -Dm755 command/runit          "$pkgdir/sbin/runit"
+    install -Dm755 command/runit-init     "$pkgdir/sbin/runit-init"
+    install -Dm755 command/runsvdir       "$pkgdir/sbin/runsvdir"
+    install -Dm755 command/runsv          "$pkgdir/sbin/runsv"
+    install -Dm755 command/sv             "$pkgdir/sbin/sv"
+    install -Dm755 command/svlogd         "$pkgdir/sbin/svlogd"
+    install -Dm755 command/chpst          "$pkgdir/sbin/chpst"
+    install -Dm755 command/utmpset        "$pkgdir/sbin/utmpset"
+
+    # runit expects /sbin/init -> /sbin/runit-init
+    ln -sf runit-init "$pkgdir/sbin/init"
+
+    # Stage scripts skeleton (installed from rootfs/ overlay)
+    install -dm755 "$pkgdir/etc/runit"
+    install -dm755 "$pkgdir/etc/sv"
+    install -dm755 "$pkgdir/var/service"
+
+    # Install stage scripts from our source tree
+    install -Dm755 "$srcdir/../../../init/runit/1" "$pkgdir/etc/runit/1"
+    install -Dm755 "$srcdir/../../../init/runit/2" "$pkgdir/etc/runit/2"
+    install -Dm755 "$srcdir/../../../init/runit/3" "$pkgdir/etc/runit/3"
+
+    install -Dm644 doc/runit.8             "$pkgdir/usr/share/man/man8/runit.8"
+    install -Dm644 doc/sv.8                "$pkgdir/usr/share/man/man8/sv.8"
+    install -Dm644 doc/runsvdir.8          "$pkgdir/usr/share/man/man8/runsvdir.8"
+}

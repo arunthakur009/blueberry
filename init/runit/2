@@ -1,0 +1,20 @@
+#!/bin/sh
+# runit stage 2 — start the service supervision tree
+# runsvdir never exits under normal operation; runit waits here.
+
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+
+# Ensure the service directory is populated
+if [ ! -d /var/service ]; then
+    mkdir -p /var/service
+fi
+
+# Enable default services by symlinking from /etc/sv
+for svc in /etc/sv/enabled/*; do
+    [ -d "$svc" ] || continue
+    name=$(basename "$svc")
+    [ -L /var/service/"$name" ] || ln -s "$svc" /var/service/"$name"
+done
+
+exec runsvdir -P /var/service 'log: ...........................................................'

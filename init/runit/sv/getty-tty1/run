@@ -1,0 +1,2 @@
+#!/bin/sh
+exec /sbin/getty -L tty1 115200 vt100

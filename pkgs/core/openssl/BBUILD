@@ -1,0 +1,37 @@
+name=openssl
+version=3.3.1
+release=1
+description="toolkit for TLS/SSL and general-purpose cryptography"
+url="https://openssl.org/"
+license="Apache-2.0"
+arch=("x86_64" "aarch64")
+depends=("musl")
+makedepends=("linux-headers")
+source=("https://www.openssl.org/source/openssl-$version.tar.gz")
+checksums=("sha256:777cd596284c883375a2a7a11bf5d2786fc5413255efab20c50d6ffe6d020b7e")
+packager="Blueberry Maintainers <maintainers@blueberry.linux>"
+
+build() {
+    cd "$name-$version"
+    CC=musl-gcc ./Configure \
+        linux-x86_64 \
+        --prefix=/usr \
+        --libdir=lib \
+        --openssldir=/etc/ssl \
+        no-comp \
+        no-zlib \
+        no-asm \
+        shared \
+        enable-ec_nistp_64_gcc_128
+    make depend
+    make
+}
+
+package() {
+    cd "$name-$version"
+    make DESTDIR="$pkgdir" install_sw install_ssldirs
+
+    # Remove static libs and perl utilities
+    rm -f "$pkgdir"/usr/lib/*.a
+    rm -rf "$pkgdir"/usr/lib/perl*
+}
