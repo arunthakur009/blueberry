@@ -17,7 +17,10 @@ all: $(BOOTDIR)/initramfs.cpio.zst
 $(BOOTDIR)/initramfs.cpio.zst: $(THISDIR)/init
 	@echo "[initramfs] assembling"
 	@rm -rf $(INITRAMDIR)
-	@mkdir -p $(INITRAMDIR)/{bin,sbin,lib,lib64,proc,sys,dev,mnt/root,run,tmp}
+	@mkdir -p $(INITRAMDIR)/bin $(INITRAMDIR)/sbin $(INITRAMDIR)/lib \
+	          $(INITRAMDIR)/lib64 $(INITRAMDIR)/proc $(INITRAMDIR)/sys \
+	          $(INITRAMDIR)/dev $(INITRAMDIR)/mnt/root $(INITRAMDIR)/run \
+	          $(INITRAMDIR)/tmp
 
 	@# Copy busybox (static binary — provides everything we need)
 	@if [ -f $(STAGEDIR)/bin/busybox ]; then \
