@@ -24,9 +24,9 @@ all: $(RUNIT_SRC)/command/runit
 
 $(RUNIT_SRC)/command/runit:
 	@echo "[runit] building"
-	@printf '%s\n' "$(MUSL_GCC)" > $(RUNIT_SRC)/src/conf-cc
-	@printf '%s\n' "$(MUSL_GCC)" > $(RUNIT_SRC)/src/conf-ld
-	@$(MAKE) -C $(RUNIT_SRC)/src -j$(JOBS)
+	@printf '%s -std=gnu11 -static -Wno-incompatible-pointer-types -Wno-implicit-function-declaration -Wno-implicit-int\n' "$(MUSL_GCC)" > $(RUNIT_SRC)/src/conf-cc
+	@printf '%s -static\n' "$(MUSL_GCC)" > $(RUNIT_SRC)/src/conf-ld
+	@cd $(RUNIT_SRC) && sh package/compile
 
 install_services:
 	@THISDIR=$(dir $(abspath $(lastword $(MAKEFILE_LIST)))); \
