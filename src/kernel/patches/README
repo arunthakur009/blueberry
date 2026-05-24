@@ -1,0 +1,10 @@
+Place .patch files here to apply them to the Linux source tree during the build.
+Patches are applied in filename sort order.
+
+Naming convention:  NNNN-description.patch
+  e.g.             0001-musl-compat-headers.patch
+                   0002-disable-werror.patch
+
+All patches must be unified diff format (diff -u or git format-patch).
+They are applied with: patch -p1 < file.patch
+from the root of the kernel source tree.

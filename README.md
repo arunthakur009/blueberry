@@ -1,98 +1,128 @@
 # Blueberry Linux
 
-A minimal, server-focused Linux distribution built on Linux 7.0 with a
-philosophy of simplicity, security, and init freedom.
-
-## Design Principles
-
-- **musl libc** — small, correct, fast
-- **busybox** — single binary userland
-- **runit** — default init (swap freely for s6, OpenRC, dinit)
-- **bpm** — Blueberry Package Manager, binary `.bb` packages
-- **No systemd** — ever
-
-## Directory Layout
+A minimal, server-focused Linux distribution built from a single source tree
+in the BSD tradition.
 
 ```
-tools/bpm/       Package manager source (Go)
-pkgs/            BBUILD recipes
-  core/          Base system packages
-  extra/         Extended packages
-  community/     Community-maintained packages
-init/            Init system scripts
-  runit/         runit stage scripts + service dirs
-  openrc/        OpenRC services
-  s6/            s6-rc services
-kernel/          Kernel config and patches
-build/           Bootstrap and image build scripts
-rootfs/          Base filesystem skeleton
+Linux 7.0 kernel · musl libc · busybox · runit init · bpm package manager
 ```
+
+---
 
 ## Quick Start
 
-### Build bpm
+```sh
+# 1. Clone
+git clone https://git.blueberry.linux/blueberry/blueberry.git
+cd blueberry
+
+# 2. Check prerequisites
+make _check_tools
+
+# 3. Build everything
+make world        # kernel + musl + busybox + runit + bpm + initramfs
+
+# 4. Install into a rootfs
+make install      # populates obj/rootfs/
+
+# 5. Create a bootable ISO
+make iso          # writes blueberry-YYYYMMDD-x86_64.iso
+```
+
+---
+
+## Design
+
+| Component | Choice | Why |
+|-----------|--------|-----|
+| C library | **musl 1.2.x** | Small, correct, static-friendly |
+| Core utilities | **busybox 1.36.x** | Single binary, 300+ applets |
+| Init | **runit 2.1.x** (default) | Supervision tree, 35 KB, no DSL |
+| Package manager | **bpm** (custom Go) | `.bb` binary packages, BFS solver |
+| Kernel | **Linux 7.0** | LTS, server profile |
+| Distro model | **BSD-style monorepo** | `git clone` → `make world` → bootable |
+
+Init freedom is a first-class feature. runit is the default; s6, OpenRC,
+and dinit are supported via the package system. systemd is not supported.
+
+---
+
+## Source Tree
+
+```
+GNUmakefile         Top-level build: make world / kernel / install / iso
+Make.config         Tunable variables (arch, versions, jobs)
+
+src/
+  kernel/           Linux 7.0 config, patches, Makefile
+  lib/musl/         musl libc build rules
+  busybox/          busybox config + Makefile
+  init/             runit stage scripts, service dirs, Makefile
+  bpm/              Package manager (Go source)
+  initramfs/        /init script + Makefile
+
+etc/                /etc skeleton (hostname, fstab, sysctl, bpm config)
+pkgs/               BBUILD package recipes
+  core/             Base system packages
+  extra/            Extended packages
+  community/        Community packages
+tools/              Host-only build scripts (mkiso, mkrepo, bootstrap)
+doc/                Documentation
+```
+
+---
+
+## Documentation
+
+| Document | Contents |
+|----------|---------|
+| [doc/ARCHITECTURE.md](doc/ARCHITECTURE.md) | System design, boot sequence, component relationships |
+| [doc/BUILD.md](doc/BUILD.md) | Building the OS, prerequisites, all make targets |
+| [doc/KERNEL.md](doc/KERNEL.md) | Kernel config, customisation, patch workflow |
+| [doc/PACKAGES.md](doc/PACKAGES.md) | `.bb` format spec, BBINDEX format, database layout |
+| [doc/BBUILD.md](doc/BBUILD.md) | BBUILD recipe authoring guide and variable reference |
+| [doc/INIT.md](doc/INIT.md) | runit deep dive, service management, alternative inits |
+| [doc/BPM.md](doc/BPM.md) | bpm user guide and command reference |
+| [doc/BPM-INTERNALS.md](doc/BPM-INTERNALS.md) | bpm module architecture for contributors |
+| [doc/CONTRIBUTING.md](doc/CONTRIBUTING.md) | How to contribute packages and code |
+| [doc/HOSTING.md](doc/HOSTING.md) | Forgejo + Woodpecker CI + Nginx repo server setup |
+| [doc/SECURITY.md](doc/SECURITY.md) | Package signing, kernel hardening, SSH hardening |
+
+---
+
+## Package Manager
 
 ```sh
-cd tools/bpm
-go build -o bpm .
-sudo install -m755 bpm /usr/local/bin/bpm
+bpm update               # sync repo indices
+bpm install openssh      # install with dep resolution
+bpm remove openssh       # remove
+bpm upgrade              # upgrade all packages
+bpm search nginx         # search available packages
+bpm verify               # check installed file integrity
+bpm build pkgs/core/openssh/BBUILD   # build a .bb from source
+bpm repo list            # list configured repositories
 ```
 
-### Bootstrap a rootfs
+Packages are `.bb` files — zstd-compressed tar archives — served from an
+Nginx-backed repository at `https://repo.blueberry.linux/`.
 
-```sh
-./build/bootstrap.sh /mnt/blueberry
-```
+---
 
-### Build a package
+## Contributing
 
-```sh
-bpm build pkgs/core/busybox/BBUILD
-```
+See [doc/CONTRIBUTING.md](doc/CONTRIBUTING.md).
 
-## Package Format
+TL;DR:
+1. Fork on Forgejo
+2. Write a `BBUILD` in `pkgs/extra/<name>/`
+3. `make bpm && obj/bpm build pkgs/extra/<name>/BBUILD`
+4. Open a Pull Request
 
-Binary packages use the `.bb` extension — a zstd-compressed tar archive:
-
-```
-package-1.0.0-1-x86_64.bb
-  .MANIFEST       # TOML metadata
-  .CHECKSUMS      # sha256 per installed file
-  .SCRIPTS/       # optional lifecycle hooks
-    pre-install
-    post-install
-    pre-remove
-    post-remove
-  usr/bin/foo
-  usr/lib/...
-  etc/...
-```
-
-## Init Structure (runit)
-
-```
-/etc/runit/1     stage 1: mounts, hostname, seed RNG
-/etc/runit/2     stage 2: runsvdir /var/service
-/etc/runit/3     stage 3: shutdown
-
-/etc/sv/<name>/  service definition
-  run            executable run script
-  finish         optional cleanup script
-  log/run        optional log service
-
-/var/service/    symlinks to active /etc/sv/<name>/ dirs
-```
-
-## Repositories
-
-Configure at `/etc/bpm/repos.d/*.conf`:
-
-```toml
-name    = "core"
-url     = "https://repo.blueberry.linux/packages/x86_64"
-enabled = true
-```
+---
 
 ## License
 
-MIT
+MIT — see `LICENSE`.
+
+All kernel code remains under the Linux kernel license (GPL-2.0-only with
+Linux-syscall-note). musl is MIT. busybox is GPL-2.0. runit is BSD-3-Clause.

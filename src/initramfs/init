@@ -1,0 +1,204 @@
+#!/bin/sh
+# /init — Blueberry Linux initramfs entry point
+#
+# This script runs as PID 1 inside the initramfs before the real root
+# is mounted. It must find, optionally decrypt, and mount the root
+# filesystem, then switch_root into it and exec runit-init.
+#
+# Kernel command-line parameters understood:
+#   root=<device|label|uuid>   root filesystem device (REQUIRED)
+#   rootfstype=<type>           filesystem type (default: auto)
+#   rootflags=<flags>           extra mount flags (default: ro)
+#   rootdelay=<seconds>         wait before looking for root (default: 0)
+#   init=<path>                 init executable (default: /sbin/runit-init)
+#   quiet                       suppress most output
+#   debug                       verbose shell tracing
+#   rescue                      drop to emergency shell instead of booting
+#   luks=<device>               LUKS device to open before mounting root
+#   luks.name=<name>            LUKS mapping name (default: cryptroot)
+#   luks.keyfile=<path>         key file inside initramfs (optional)
+#   lvm=<vg/lv>                 LVM logical volume to activate
+
+# ── Strict mode ───────────────────────────────────────────────────────────────
+set -e
+export PATH=/usr/sbin:/usr/bin:/sbin:/bin
+
+# ── Emergency shell ───────────────────────────────────────────────────────────
+rescue() {
+    echo ""
+    echo "*** INITRAMFS RESCUE SHELL ***"
+    echo "Type 'exit' or Ctrl+D to attempt to continue boot."
+    echo ""
+    exec sh
+}
+trap rescue EXIT
+
+# ── Parse /proc/cmdline ───────────────────────────────────────────────────────
+cmdline() {
+    local param="$1"
+    local val
+    val=$(cat /proc/cmdline)
+    for token in $val; do
+        case "$token" in
+            "$param")    echo "1"; return ;;
+            "$param"=*)  echo "${token#*=}"; return ;;
+        esac
+    done
+    echo ""
+}
+
+# ── Mount early filesystems ───────────────────────────────────────────────────
+mount -t proc    proc    /proc
+mount -t sysfs   sysfs   /sys
+mount -t devtmpfs devtmpfs /dev 2>/dev/null || \
+    mount -t tmpfs devtmpfs /dev -o nosuid,mode=0755
+mkdir -p /dev/pts /dev/shm /run
+mount -t devpts  devpts  /dev/pts -o nosuid,noexec,gid=5,mode=620
+mount -t tmpfs   shm     /dev/shm -o nosuid,nodev
+mount -t tmpfs   run     /run     -o nosuid,nodev,mode=755
+
+# ── Populate /dev ─────────────────────────────────────────────────────────────
+[ -x /sbin/mdev ] && mdev -s
+
+# ── Kernel command-line ───────────────────────────────────────────────────────
+ROOT=$(cmdline root)
+ROOTFSTYPE=$(cmdline rootfstype)
+ROOTFLAGS=$(cmdline rootflags)
+ROOTDELAY=$(cmdline rootdelay)
+INIT=$(cmdline init)
+QUIET=$(cmdline quiet)
+DEBUG=$(cmdline debug)
+RESCUE=$(cmdline rescue)
+LUKS_DEV=$(cmdline luks)
+LUKS_NAME=$(cmdline luks.name)
+LUKS_KEY=$(cmdline luks.keyfile)
+LVM_VOL=$(cmdline lvm)
+
+: "${ROOTFSTYPE:=auto}"
+: "${ROOTFLAGS:=ro}"
+: "${ROOTDELAY:=0}"
+: "${INIT:=/sbin/runit-init}"
+: "${LUKS_NAME:=cryptroot}"
+
+[ -n "$DEBUG" ] && set -x
+[ -n "$RESCUE" ] && rescue
+
+# ── Logging ───────────────────────────────────────────────────────────────────
+log() {
+    [ -z "$QUIET" ] && echo "[init] $*"
+    echo "[init] $*" >> /run/initramfs.log 2>/dev/null || true
+}
+die() {
+    echo "[FATAL] $*" >&2
+    rescue
+}
+
+# ── Validate root= was given ──────────────────────────────────────────────────
+[ -z "$ROOT" ] && die "root= not specified on kernel command line"
+
+log "Blueberry Linux initramfs"
+log "root=$ROOT rootfstype=$ROOTFSTYPE rootflags=$ROOTFLAGS"
+
+# ── Wait for root device ──────────────────────────────────────────────────────
+if [ "$ROOTDELAY" -gt 0 ] 2>/dev/null; then
+    log "Waiting ${ROOTDELAY}s for root device..."
+    sleep "$ROOTDELAY"
+fi
+
+# ── Resolve root device ───────────────────────────────────────────────────────
+# Supports: /dev/sdXN, LABEL=xxx, UUID=xxx, PARTUUID=xxx
+resolve_device() {
+    local spec="$1"
+    case "$spec" in
+        UUID=*)
+            local uuid="${spec#UUID=}"
+            local dev
+            dev=$(blkid -t UUID="$uuid" -o device 2>/dev/null | head -1)
+            [ -n "$dev" ] && echo "$dev" && return
+            ;;
+        LABEL=*)
+            local lbl="${spec#LABEL=}"
+            local dev
+            dev=$(blkid -t LABEL="$lbl" -o device 2>/dev/null | head -1)
+            [ -n "$dev" ] && echo "$dev" && return
+            ;;
+        PARTUUID=*)
+            local puuid="${spec#PARTUUID=}"
+            local dev
+            dev=$(blkid -t PARTUUID="$puuid" -o device 2>/dev/null | head -1)
+            [ -n "$dev" ] && echo "$dev" && return
+            ;;
+        *)
+            echo "$spec"
+            return
+            ;;
+    esac
+    echo ""
+}
+
+wait_for_device() {
+    local dev="$1"
+    local retries=20
+    while [ $retries -gt 0 ]; do
+        [ -b "$dev" ] && return 0
+        mdev -s 2>/dev/null || true
+        sleep 0.5
+        retries=$((retries - 1))
+    done
+    return 1
+}
+
+ROOTDEV=$(resolve_device "$ROOT")
+[ -z "$ROOTDEV" ] && die "Could not resolve root device: $ROOT"
+
+log "Waiting for root device $ROOTDEV..."
+wait_for_device "$ROOTDEV" || die "Root device $ROOTDEV not found"
+
+# ── LUKS decryption (optional) ────────────────────────────────────────────────
+if [ -n "$LUKS_DEV" ]; then
+    LUKS_REAL=$(resolve_device "$LUKS_DEV")
+    log "Opening LUKS device $LUKS_REAL → /dev/mapper/$LUKS_NAME"
+    if [ -n "$LUKS_KEY" ] && [ -f "$LUKS_KEY" ]; then
+        cryptsetup luksOpen --key-file "$LUKS_KEY" \
+            "$LUKS_REAL" "$LUKS_NAME" \
+            || die "LUKS open failed"
+    else
+        # Prompt for passphrase on the console
+        cryptsetup luksOpen "$LUKS_REAL" "$LUKS_NAME" \
+            || die "LUKS open failed"
+    fi
+    # If root= points to the raw device, redirect to the mapped device
+    case "$ROOTDEV" in
+        "$LUKS_REAL") ROOTDEV="/dev/mapper/$LUKS_NAME" ;;
+    esac
+fi
+
+# ── LVM activation (optional) ─────────────────────────────────────────────────
+if [ -n "$LVM_VOL" ]; then
+    log "Activating LVM"
+    vgchange -ay 2>/dev/null || true
+fi
+
+# ── Mount root filesystem ─────────────────────────────────────────────────────
+log "Mounting $ROOTDEV → /mnt/root ($ROOTFSTYPE, $ROOTFLAGS)"
+mkdir -p /mnt/root
+mount -t "$ROOTFSTYPE" -o "$ROOTFLAGS" "$ROOTDEV" /mnt/root \
+    || die "Failed to mount $ROOTDEV"
+
+# ── Verify init exists ────────────────────────────────────────────────────────
+[ -x "/mnt/root$INIT" ] || die "$INIT not found on root filesystem"
+
+# ── Move mounts into real root ────────────────────────────────────────────────
+log "Switching root"
+for dir in proc sys dev run; do
+    mkdir -p /mnt/root/$dir
+    mount --move /$dir /mnt/root/$dir 2>/dev/null || true
+done
+
+# ── Copy log to real root ─────────────────────────────────────────────────────
+cp /run/initramfs.log /mnt/root/run/initramfs.log 2>/dev/null || true
+
+# ── Switch root and exec real init ───────────────────────────────────────────
+trap - EXIT
+log "exec $INIT"
+exec switch_root /mnt/root "$INIT"
