@@ -89,8 +89,30 @@ doc/                Documentation
 | [doc/BPM.md](doc/BPM.md) | bpm user guide and command reference |
 | [doc/BPM-INTERNALS.md](doc/BPM-INTERNALS.md) | bpm module architecture for contributors |
 | [doc/CONTRIBUTING.md](doc/CONTRIBUTING.md) | How to contribute packages and code |
-| [doc/HOSTING.md](doc/HOSTING.md) | GitHub Actions CI + Nginx repo server setup |
+| [doc/CI.md](doc/CI.md) | Complete CI/CD pipeline reference (all 4 workflows) |
+| [doc/HOSTING.md](doc/HOSTING.md) | Nginx repo server, Tailscale, secrets setup |
 | [doc/SECURITY.md](doc/SECURITY.md) | Package signing, kernel hardening, SSH hardening |
+
+---
+
+## Upgrading Packages
+
+```sh
+# See what has new upstream versions
+tools/check-updates.sh
+
+# Bump one package to latest and verify it builds
+make upgrade-pkg PKG=musl
+make upgrade-pkg PKG=zlib VERSION=1.3.2   # pin to a specific version
+
+# Or manually: patch BBUILD → build → commit
+tools/bump-package.sh musl --build
+git add pkgs/core/musl/BBUILD
+git commit -m "chore(pkgs): update musl 1.2.5 → 1.2.6"
+```
+
+The `auto-update.yml` CI workflow runs weekly and opens **draft PRs**
+automatically when new versions are found.
 
 ---
 

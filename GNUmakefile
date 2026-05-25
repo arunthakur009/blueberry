@@ -74,7 +74,7 @@ TAR  := tar
 # ── Default goal ─────────────────────────────────────────────────────────────
 .DEFAULT_GOAL := world
 .PHONY: world kernel kernel-headers userland musl busybox runit bpm initramfs install \
-        iso repo fetch clean distclean help _check_tools
+        iso repo pkg upgrade-pkg fetch clean distclean help _check_tools
 
 world: userland kernel initramfs
 	@echo ""
@@ -283,6 +283,30 @@ repo: bpm
 	@$(TOPDIR)/tools/mkrepo.sh $(OBJDIR)/repo
 	@echo "[repo] index written to $(OBJDIR)/repo/BBINDEX.zst"
 
+# ── Single-package build ──────────────────────────────────────────────────────
+# Build one package from source without running the full repo target.
+# Usage:  make pkg PKG=musl
+#         make pkg PKG=zlib ARCH=aarch64
+pkg: bpm
+	$(if $(PKG),,$(error PKG is not set. Usage: make pkg PKG=<name>))
+	@BBUILD=$$(find $(PKGSDIR) -path "*/$(PKG)/BBUILD" | head -1); \
+	[ -n "$$BBUILD" ] || { echo "Package '$(PKG)' not found in pkgs/"; exit 1; }; \
+	echo "[pkg] building $(PKG)"; \
+	PATH="$(MUSL_SYSROOT)/bin:$$PATH" \
+	$(BPM_BIN) build \
+	    --output $(OBJDIR)/repo \
+	    --arch $(ARCH) \
+	    --topdir $(TOPDIR) \
+	    $$BBUILD
+
+# Bump a package to its latest upstream version, then build it.
+# Usage:  make upgrade-pkg PKG=musl
+#         make upgrade-pkg PKG=zlib VERSION=1.3.2
+upgrade-pkg:
+	$(if $(PKG),,$(error PKG is not set. Usage: make upgrade-pkg PKG=<name> [VERSION=x.y.z]))
+	@bash $(TOPDIR)/tools/bump-package.sh $(PKG) $(VERSION)
+	@$(MAKE) pkg PKG=$(PKG)
+
 # ── Directory creation ────────────────────────────────────────────────────────
 $(OBJDIR_SRC) $(MUSL_SYSROOT) $(STAGEDIR) $(BOOTDIR) $(OBJDIR):
 	@mkdir -p $@
@@ -309,21 +333,29 @@ _check_tools:
 help:
 	@echo "Blueberry Linux build system"
 	@echo ""
-	@echo "Targets:"
-	@echo "  world        Build everything (default)"
-	@echo "  kernel       Build Linux $(LINUX_VERSION) kernel + modules"
-	@echo "  userland     Build musl + busybox + runit + bpm"
-	@echo "  musl         Build musl libc sysroot"
-	@echo "  busybox      Build busybox"
-	@echo "  runit        Build runit init"
-	@echo "  bpm          Build the package manager"
-	@echo "  initramfs    Build initramfs image"
-	@echo "  install      Install world into DESTDIR=$(STAGEDIR)"
-	@echo "  iso          Build a bootable ISO"
-	@echo "  repo         Build package repository from pkgs/"
-	@echo "  fetch        Download all upstream sources"
-	@echo "  clean        Remove build artefacts (keep downloads)"
-	@echo "  distclean    Remove everything including downloads"
+	@echo "OS build targets:"
+	@echo "  world          Build everything (default)"
+	@echo "  kernel         Build Linux $(LINUX_VERSION) kernel + modules"
+	@echo "  userland       Build musl + busybox + runit + bpm"
+	@echo "  musl           Build musl libc sysroot"
+	@echo "  busybox        Build busybox"
+	@echo "  runit          Build runit init"
+	@echo "  bpm            Build the package manager"
+	@echo "  initramfs      Build initramfs image"
+	@echo "  install        Install world into DESTDIR=$(STAGEDIR)"
+	@echo "  iso            Build a bootable ISO"
+	@echo ""
+	@echo "Package repository targets:"
+	@echo "  repo           Build all packages from pkgs/ (needs musl-gcc)"
+	@echo "  pkg PKG=<n>    Build a single package by name"
+	@echo "  upgrade-pkg PKG=<n> [VERSION=x.y.z]"
+	@echo "                 Bump a package to latest (or given) version and build"
+	@echo ""
+	@echo "Utility targets:"
+	@echo "  fetch          Download all upstream OS sources"
+	@echo "  clean          Remove build artefacts (keep downloads)"
+	@echo "  distclean      Remove everything including downloads"
+	@echo "  _check_tools   Verify required tools are installed"
 	@echo ""
 	@echo "Variables (override with VAR=value):"
 	@echo "  ARCH=$(ARCH)  JOBS=$(JOBS)  DESTDIR=$(DESTDIR)"

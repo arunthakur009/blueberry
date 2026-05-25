@@ -183,7 +183,42 @@ go vet ./...
 
 ---
 
-## 7. Testing
+## 7. Upgrading an Existing Package
+
+To bump a package to a newer upstream version:
+
+```sh
+# See what needs updating
+tools/check-updates.sh
+
+# Bump one package (auto-fetches checksum)
+tools/bump-package.sh musl
+
+# Bump and immediately test the build
+tools/bump-package.sh musl --build
+# or equivalently:
+make upgrade-pkg PKG=musl
+
+# Pin to a specific version
+tools/bump-package.sh musl 1.2.7
+make upgrade-pkg PKG=musl VERSION=1.2.7
+
+# Commit after verifying
+git add pkgs/core/musl/BBUILD
+git commit -m "chore(pkgs): update musl 1.2.5 → 1.2.6"
+```
+
+**Rules for version bumps:**
+- Always reset `release=1` when `version=` changes (done automatically by the tool)
+- Only increment `release=` when the BBUILD changes but the upstream version does not
+- Verify the new checksum matches — `bump-package.sh` does this automatically
+- The build must pass (`make pkg PKG=<name>`) before committing
+
+---
+
+## 8. Testing
+
+### bpm unit tests
 
 Currently bpm has no automated tests. Adding them is the highest-priority
 contribution. See `doc/BPM-INTERNALS.md` for the module layout.
@@ -194,16 +229,56 @@ Suggested test coverage:
 - `internal/archive`: create then open a .bb and verify contents
 - `internal/db`: record, get, list, remove operations
 
-Run tests:
 ```sh
 cd src/bpm
-go test ./...
 go test -race ./...
 ```
 
+### Building and testing a package locally
+
+```sh
+# Build a single package
+make pkg PKG=zlib
+
+# Install it into a test root to check it works
+mkdir -p /tmp/test-root
+../blueberry-build/bpm --root /tmp/test-root install \
+    --file ../blueberry-build/repo/zlib-*.bb
+ls /tmp/test-root/usr/lib/
+
+# Build all packages
+make repo
+```
+
+### Testing the OS in QEMU
+
+After `make world`:
+
+```sh
+# Boot with the standard init (requires root= parameter)
+qemu-system-x86_64 \
+  -kernel ../blueberry-build/boot/vmlinuz \
+  -initrd ../blueberry-build/boot/initramfs.cpio.zst \
+  -append "console=ttyS0 root=/dev/sda1 rootfstype=ext4" \
+  -nographic -m 512M
+
+# Boot with the smoke test init (no real root needed)
+# First serve the package repo:
+python3 -m http.server 8080 --directory ../blueberry-build/repo/ &
+qemu-system-x86_64 \
+  -kernel ../blueberry-build/boot/vmlinuz \
+  -initrd ../blueberry-build/boot/initramfs.cpio.zst \
+  -append "console=ttyS0 init=/test-init BPMREPO=http://10.0.2.2:8080" \
+  -nographic -no-reboot -m 512M \
+  -net nic,model=virtio -net user
+```
+
+The smoke test (`init=/test-init`) prints `SMOKE_TEST_RESULT=PASS` or `FAIL`
+and then powers off. See `src/initramfs/test-init` for what it checks.
+
 ---
 
-## 8. Pull Request Process
+## 9. Pull Request Process
 
 1. Fork the repository on GitHub.
 2. Create a branch with a descriptive name: `add-nginx`, `fix-solver-cycle`, etc.
@@ -215,7 +290,7 @@ go test -race ./...
 
 ---
 
-## 9. Security Reporting
+## 10. Security Reporting
 
 Do **not** open a public issue for security vulnerabilities. Email
 `security@blueberry.mmzsigmond.me` with:

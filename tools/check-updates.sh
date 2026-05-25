@@ -1,24 +1,32 @@
 #!/bin/bash
-# tools/check-updates.sh — check upstream versions for all core BBUILDs
+# tools/check-updates.sh — check upstream versions for BBUILDs
 #
 # Usage:
-#   tools/check-updates.sh          print a report, no changes
-#   tools/check-updates.sh --pr     also create GitHub PRs for found updates
+#   tools/check-updates.sh [<pkg>] [--pr]
 #
-# The script checks each BBUILD listed in UPSTREAM_FN against the respective
-# upstream source. When --pr is given and a newer version is found it:
-#   1. Patches the BBUILD (version= and checksum)
-#   2. git commit + push to branch  auto-update/<pkg>-<newver>
-#   3. gh pr create (draft)
+#   (no args)           check all packages, print report
+#   <pkg>               check only <pkg> (e.g. "musl")
+#   --pr                for every update found: bump BBUILD, push branch, open draft PR
 #
-# Requires: curl, jq, wget (all available in the CI runner)
-# For --pr: gh CLI must be authenticated (GITHUB_TOKEN env var)
+# When called from bump-package.sh for a single package, outputs:
+#   → <old> → <new>    on the last line of the package block
+#
+# Requires: curl, jq, wget
+# For --pr: gh CLI must be authenticated via GITHUB_TOKEN
 
 set -euo pipefail
 
 TOPDIR="$(cd "$(dirname "$0")/.." && pwd)"
 PR_MODE=false
-[[ "${1:-}" == "--pr" ]] && PR_MODE=true
+PKG_FILTER=""
+
+for arg in "$@"; do
+    case "$arg" in
+        --pr)  PR_MODE=true ;;
+        -*)    echo "Unknown flag: $arg" >&2; exit 1 ;;
+        *)     PKG_FILTER="$arg" ;;
+    esac
+done
 
 MAIN_BRANCH=$(git -C "$TOPDIR" symbolic-ref --short HEAD 2>/dev/null || echo master)
 
@@ -126,6 +134,8 @@ process_bbuild() {
     name=$(grep '^name=' "$bbuild" | head -1 | cut -d= -f2)
     version=$(grep '^version=' "$bbuild" | head -1 | cut -d= -f2)
 
+    # Skip if a filter is set and this package doesn't match
+    [[ -n "$PKG_FILTER" && "$name" != "$PKG_FILTER" ]] && return 0
     [[ -z "${UPSTREAM_FN[$name]+x}" ]] && return 0
 
     printf '\nChecking %-20s (current: %s)\n' "$name" "$version"

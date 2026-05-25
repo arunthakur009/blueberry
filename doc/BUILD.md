@@ -207,6 +207,72 @@ make LINUX_VERSION=7.1 kernel
 
 ---
 
+## Building and Testing a Single Package
+
+You do not need `make repo` to test one package. `make pkg` builds exactly one:
+
+```sh
+make pkg PKG=zlib
+make pkg PKG=openssl
+make pkg PKG=openssh ARCH=aarch64
+```
+
+The `.bb` file is placed in `../blueberry-build/repo/`. To install it into a
+test root without a running Blueberry system:
+
+```sh
+make pkg PKG=zlib
+mkdir -p /tmp/test-root
+../blueberry-build/bpm --root /tmp/test-root install \
+    --file ../blueberry-build/repo/zlib-1.3.1-1-x86_64.bb
+ls /tmp/test-root/usr/lib/
+```
+
+---
+
+## Upgrading an Existing Package
+
+### One-liner (automatic)
+
+```sh
+# See what has updates across all packages
+tools/check-updates.sh
+
+# Bump to latest and verify it builds
+make upgrade-pkg PKG=musl
+make upgrade-pkg PKG=zlib VERSION=1.3.2   # pin to a specific version
+```
+
+### Step-by-step (manual)
+
+```sh
+# 1. Patch the BBUILD (auto-fetches checksum)
+tools/bump-package.sh musl
+
+# 2. Build to verify
+make pkg PKG=musl
+
+# 3. Commit
+git add pkgs/core/musl/BBUILD
+git commit -m "chore(pkgs): update musl 1.2.5 → 1.2.6"
+```
+
+Or do everything in one step and have `bump-package.sh` also build:
+
+```sh
+tools/bump-package.sh musl --build
+```
+
+### What happens inside `tools/bump-package.sh`
+
+1. Finds the BBUILD in `pkgs/{core,extra,community}/<name>/BBUILD`
+2. Reads the `source=(...)` URL template and substitutes the new version
+3. Downloads the source tarball to compute its SHA-256 checksum
+4. Patches `version=`, resets `release=1`, replaces the old checksum
+5. If `--build` is given, runs `make pkg PKG=<name>` to verify
+
+---
+
 ## Machine-Local Configuration
 
 To avoid repeating flags on every `make` invocation, create `Make.local`:
