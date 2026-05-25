@@ -15,22 +15,66 @@ no open ports required.
 ```
 GitHub (source code + CI)
   │
-  ├─ push / PR  → GitHub Actions
-  │                 lint → test → build bpm
-  │                 (main only) → build world → build packages
-  │                             → sign with minisign
-  │                             → rsync to repo server (via Tailscale)
+  ├─ every push / PR
+  │    software.yml:  lint → test → build bpm
   │
-  └─ NAS (192.168.0.79) running Nginx, no open ports
+  ├─ push to main when pkgs/** changes
+  │    packages.yml:  build packages → sign → rsync to repo server
+  │
+  ├─ manual / weekly (workflow_dispatch / cron)
+  │    world.yml:     build world → QEMU smoke tests
+  │    auto-update.yml: check upstream versions → open PRs
+  │
+  └─ NAS / VPS running Nginx
        Cloudflare Tunnel → bb.mmzsigmond.me      → .bb files + BBINDEX.zst
-       Cloudflare Tunnel → blueberry.mmzsigmond.me → project site
 ```
 
 ---
 
-## 2. Repo Server Setup (Nginx on your NAS)
+## 2. Workflow Overview
 
-The repo server is a single Nginx container. No Forgejo, no Woodpecker.
+### `software.yml` — bpm CI (every push / PR)
+
+| Job | What it does |
+|-----|--------------|
+| `lint` | `go fmt ./...` and `go vet ./...` |
+| `test` | `go test -race ./...` |
+| `build` | `make bpm`, smoke-tests the binary, uploads artifact |
+
+### `packages.yml` — package repo (push to main when recipes change)
+
+| Job | What it does |
+|-----|--------------|
+| `build` | `make repo` — builds all packages with host musl-gcc (no world build needed) |
+| `publish` | Signs with minisign, rsyncs to repo server |
+
+**Key point:** `make repo` runs entirely independently of `make world`. Each
+BBUILD compiles its package with the host's `musl-gcc` (from `musl-tools`).
+No kernel compilation is needed.
+
+### `world.yml` — full OS build + QEMU smoke test (manual / weekly)
+
+| Job | What it does |
+|-----|--------------|
+| `build-world` | `make world JOBS=$(nproc)` — kernel + sysroot + initramfs |
+| `build-packages` | `make repo` — packages needed for smoke test |
+| `smoke-test` | Injects `test-init` into initramfs, boots in QEMU, verifies all four checks |
+
+QEMU smoke tests verify:
+1. Kernel boots, filesystems mount
+2. Basic shell commands work (`ls`, `ps`, `mount`, `uname`)
+3. Network comes up (QEMU user networking + DHCP)
+4. `bpm update` and `bpm install zlib` succeed from CI-local repo
+
+### `auto-update.yml` — upstream version check (weekly Monday 06:00 UTC)
+
+Runs `tools/check-updates.sh --pr`. For each BBUILD with a configured upstream,
+bumps `version=` and `checksums=`, creates a branch, and opens a **draft PR**
+for review.
+
+---
+
+## 3. Repo Server Setup (Nginx)
 
 ### Directory layout on the host
 
@@ -45,9 +89,6 @@ The repo server is a single Nginx container. No Forgejo, no Woodpecker.
       aarch64/
     keys/
       blueberry-repo.pub   ← public signing key (served to clients)
-  certbot/
-    conf/
-    webroot/
 ```
 
 ### docker-compose.yml
@@ -55,13 +96,12 @@ The repo server is a single Nginx container. No Forgejo, no Woodpecker.
 Nginx only listens on HTTP — Cloudflare Tunnel handles TLS publicly.
 
 ```yaml
-# /srv/blueberry/docker-compose.yml
 services:
   nginx:
     image: nginx:1.27-alpine
     restart: unless-stopped
     ports:
-      - "127.0.0.1:8080:80"   # bind to localhost only — Cloudflare connects here
+      - "127.0.0.1:8080:80"
     volumes:
       - ./nginx/conf.d:/etc/nginx/conf.d:ro
       - ./repo:/srv/repo:ro
@@ -76,7 +116,7 @@ services:
       - nginx
 ```
 
-### nginx/conf.d/repo.conf — package repository
+### nginx/conf.d/repo.conf
 
 ```nginx
 server {
@@ -96,6 +136,7 @@ server {
         expires 1d;
     }
 
+    # Keys directory: serve files directly but suppress directory listing
     location /keys/ {
         autoindex off;
     }
@@ -105,39 +146,7 @@ server {
 }
 ```
 
-### nginx/conf.d/site.conf — project website
-
-```nginx
-server {
-    listen 80;
-    server_name blueberry.mmzsigmond.me;
-
-    root /srv/site;
-    index index.html;
-
-    location / {
-        try_files $uri $uri/ =404;
-    }
-
-    access_log /var/log/nginx/site.access.log;
-    error_log  /var/log/nginx/site.error.log;
-}
-```
-
-Add a `site/` volume to docker-compose.yml alongside `repo/`:
-```yaml
-    volumes:
-      - ./nginx/conf.d:/etc/nginx/conf.d:ro
-      - ./repo:/srv/repo:ro
-      - ./site:/srv/site:ro
-```
-
-Drop your static HTML into `/srv/blueberry/site/` and it'll be live at
-`https://blueberry.mmzsigmond.me`.
-
----
-
-### .env file (next to docker-compose.yml)
+### .env file
 
 ```sh
 CLOUDFLARE_TUNNEL_TOKEN=your-token-here
@@ -147,60 +156,29 @@ CLOUDFLARE_TUNNEL_TOKEN=your-token-here
 
 1. Go to Cloudflare Zero Trust → Networks → Tunnels → Create a tunnel
 2. Name it `blueberry`
-3. Copy the tunnel token → put it in `.env` as `CLOUDFLARE_TUNNEL_TOKEN`
-4. In the tunnel's **Public Hostnames** tab, add two routes:
+3. Copy the tunnel token → put it in `.env`
+4. In **Public Hostnames**, add:
 
    | Subdomain | Domain | Service |
    |-----------|--------|---------|
    | _(empty)_ | `bb.mmzsigmond.me` | `http://nginx:80` |
-   | _(empty)_ | `blueberry.mmzsigmond.me` | `http://nginx:80` |
 
-5. Save
-
-### Start it
-
-```sh
-cd /srv/blueberry
-docker compose up -d
-docker compose ps
-```
-
-### Verify
-
-```sh
-curl https://bb.mmzsigmond.me/
-# Should return an HTML directory listing
-```
-
----
-
-## 3. TLS
-
-No action needed. Cloudflare terminates TLS for `bb.mmzsigmond.me`
-automatically. The certificate renews itself via Cloudflare.
+5. Save, then: `docker compose up -d`
 
 ---
 
 ## 4. Deploy User for rsync
 
-GitHub Actions rsyncs packages to the server over SSH. Create a locked-down
-user on the repo server:
-
 ```sh
 # On the repo server
 useradd -r -s /sbin/nologin -d /srv/blueberry/repo deploy
 mkdir -p /home/deploy/.ssh && chmod 700 /home/deploy/.ssh
-
-# Paste the public half of REPO_SSH_KEY here:
 echo "ssh-ed25519 AAAA... github-actions" > /home/deploy/.ssh/authorized_keys
 chmod 600 /home/deploy/.ssh/authorized_keys
-chown -R deploy:deploy /home/deploy/.ssh
-
-# Give deploy write access to the repo directory only
-chown -R deploy:deploy /srv/blueberry/repo
+chown -R deploy:deploy /home/deploy/.ssh /srv/blueberry/repo
 ```
 
-Generate the key pair (on your local machine, not the server):
+Generate the key pair locally:
 
 ```sh
 ssh-keygen -t ed25519 -C "github-actions-deploy" -f ./deploy_key -N ""
@@ -212,56 +190,44 @@ ssh-keygen -t ed25519 -C "github-actions-deploy" -f ./deploy_key -N ""
 
 ## 5. GitHub Actions Secrets
 
-Go to your repo → **Settings → Secrets and variables → Actions → New repository secret**:
+**Settings → Secrets and variables → Actions → New repository secret:**
 
 | Secret | Value |
 |--------|-------|
-| `MINISIGN_PRIVATE_KEY` | Contents of `blueberry-repo.key` (the minisign signing key) |
-| `REPO_SSH_KEY` | Contents of `deploy_key` (the SSH private key for rsync) |
-| `TAILSCALE_AUTHKEY` | Tailscale auth key — only needed if your repo server has no public IP |
+| `MINISIGN_PRIVATE_KEY` | Contents of `blueberry-repo.key` (minisign signing key) |
+| `REPO_SSH_KEY` | Contents of `deploy_key` (SSH private key for rsync) |
+| `TAILSCALE_AUTHKEY` | Tailscale auth key — only if your server has no public IP |
 
 ---
 
-## 6. Tailscale (if your repo server is on a private network)
+## 6. Tailscale (private network)
 
-If your repo server is a home NAS (e.g. 192.168.0.79) without a public IP,
-GitHub Actions can't reach it directly. Use Tailscale to create a private
-tunnel:
+If your repo server is a home NAS with no public IP:
 
 ```sh
 # On the repo server
 curl -fsSL https://tailscale.com/install.sh | sh
 tailscale up
-# Note the Tailscale IP (e.g. 100.x.y.z) — use this in the rsync destination
 ```
 
-In `.github/workflows/ci.yml`, the `sign-and-publish` job already includes
-the Tailscale step. Generate an auth key at tailscale.com/admin/settings/keys
-(reusable, ephemeral) and add it as `TAILSCALE_AUTHKEY`.
-
-Update the rsync target in `ci.yml` to use the Tailscale IP:
-
-```yaml
-rsync -av --delete /tmp/packages/ \
-  deploy@100.x.y.z:/srv/blueberry/repo/packages/x86_64/
-```
+Note the Tailscale IP (e.g. `100.98.169.26`). That IP is already set in
+`packages.yml`. Generate a reusable ephemeral auth key at
+tailscale.com/admin/settings/keys and add it as `TAILSCALE_AUTHKEY`.
 
 ---
 
 ## 7. Package Signing
 
-### Generate a signing key pair
-
 ```sh
-# On a secure machine (offline ideally)
+# On a secure machine
 minisign -G -s blueberry-repo.key -p blueberry-repo.pub \
     -c "Blueberry Linux package repository"
 ```
 
-- Store `blueberry-repo.key` securely — this is your `MINISIGN_PRIVATE_KEY` secret.
-- Copy `blueberry-repo.pub` to `/srv/blueberry/repo/keys/` so clients can fetch it.
+- `blueberry-repo.key` → GitHub secret `MINISIGN_PRIVATE_KEY`
+- `blueberry-repo.pub` → copy to `/srv/blueberry/repo/keys/` so clients can fetch it
 
-### Add the key to a Blueberry install
+Add the key on a Blueberry install:
 
 ```sh
 mkdir -p /etc/bpm/trusted-keys
@@ -271,47 +237,71 @@ wget -O /etc/bpm/trusted-keys/blueberry-repo.pub \
 
 ---
 
-## 8. CI Pipeline Summary
-
-`.github/workflows/ci.yml` runs these jobs:
-
-| Job | Trigger | What it does |
-|-----|---------|--------------|
-| `lint-bpm` | all pushes + PRs | `go fmt` + `go vet` |
-| `test-bpm` | all pushes + PRs | `go test -race ./...` |
-| `build-bpm` | all pushes + PRs | `make bpm`, uploads binary artifact |
-| `build-world` | push to main | `make world JOBS=4`, uploads boot/ artifact |
-| `build-packages` | push to main | `make repo`, uploads repo/ artifact |
-| `sign-and-publish` | push to main | Signs with minisign, rsyncs to repo server |
-
----
-
-## 9. Local Package Repository (Air-Gapped / Testing)
-
-To serve packages locally without the CI pipeline:
+## 8. Local Package Repository (Testing)
 
 ```sh
 make repo
 # packages land in ../blueberry-build/repo/
 
-# Serve with Python
 python3 -m http.server 8080 --directory ../blueberry-build/repo/
-
-# Or with busybox
-busybox httpd -f -p 8080 -h ../blueberry-build/repo/
 ```
 
 Add to `/etc/bpm/repos.d/local.conf` on target systems:
 
-```toml
+```
 name    = "local"
-url     = "http://192.168.0.79:8080"
+url     = "http://192.168.1.x:8080"
 enabled = true
 ```
 
 ---
 
-## 10. Disaster Recovery
+## 9. QEMU Smoke Test (local)
+
+```sh
+# Boot with the test init (no real root needed):
+qemu-system-x86_64 \
+  -kernel ../blueberry-build/boot/vmlinuz \
+  -initrd ../blueberry-build/boot/initramfs.cpio.zst \
+  -append "console=ttyS0 init=/test-init BPMREPO=http://10.0.2.2:8080" \
+  -nographic -no-reboot -m 512M \
+  -net nic,model=virtio -net user
+```
+
+`test-init` is in `src/initramfs/test-init`. The CI workflow injects it
+into the initramfs at test time. It's also included in the production initramfs
+but is only activated when `init=/test-init` is on the kernel command line.
+
+---
+
+## 10. Automated Package Updates
+
+`tools/check-updates.sh` checks upstream versions and opens draft PRs:
+
+```sh
+# Dry-run report only
+tools/check-updates.sh
+
+# Open GitHub PRs for each found update
+tools/check-updates.sh --pr
+```
+
+The `auto-update.yml` workflow runs this weekly. Packages with upstream
+checks configured:
+
+| Package | Upstream check |
+|---------|----------------|
+| musl | musl.libc.org/releases/ |
+| busybox | busybox.net/downloads/ |
+| linux-headers | kernel.org/releases.json |
+| openssl | github.com/openssl/openssl releases |
+| util-linux | github.com/util-linux/util-linux releases |
+| zlib | github.com/madler/zlib releases |
+| openssh | cdn.openbsd.org/pub/OpenBSD/OpenSSH/portable/ |
+
+---
+
+## 11. Disaster Recovery
 
 ### Repo server goes down
 
@@ -322,6 +312,8 @@ The entire package set rebuilds from source with `make repo`.
 ### Signing key compromised
 
 1. Generate a new key pair.
-2. Remove the old key from `/etc/bpm/trusted-keys/` on all systems.
-3. Rebuild and re-sign all packages.
-4. Announce the rotation via a GitHub release / security advisory.
+2. Update `MINISIGN_PRIVATE_KEY` secret in GitHub.
+3. Replace `blueberry-repo.pub` on the server with the new public key.
+4. Remove old key from `/etc/bpm/trusted-keys/` on all systems.
+5. Rebuild and re-sign all packages by pushing to main.
+6. Announce via a GitHub release / security advisory.

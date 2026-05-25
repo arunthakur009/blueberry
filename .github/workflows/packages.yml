@@ -1,0 +1,109 @@
+# .github/workflows/packages.yml — build, sign, and publish the package repository
+#
+# Triggered on push to main/master when package recipes or the build tooling
+# changes. Also manually triggerable via workflow_dispatch.
+#
+# Does NOT require make world — packages build with the host's musl-gcc
+# (from the musl-tools apt package), independently of the OS sysroot.
+#
+# Required secrets (Settings → Secrets → Actions):
+#   MINISIGN_PRIVATE_KEY   minisign secret key (base64 or raw, no passphrase)
+#   REPO_SSH_KEY           SSH private key for rsync to the repo server
+#   TAILSCALE_AUTHKEY      Tailscale auth key (if repo server is on a private network)
+
+name: Packages
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - 'pkgs/**'
+      - 'src/bpm/**'
+      - 'tools/mkrepo.sh'
+      - 'GNUmakefile'
+      - 'Make.config'
+  workflow_dispatch:
+
+env:
+  OBJDIR: /tmp/blueberry-build
+
+jobs:
+
+  build:
+    name: Build package repo
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache-dependency-path: src/bpm/go.sum
+
+      - name: Install build deps
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y \
+            build-essential musl-tools wget tar \
+            xz-utils bzip2 zstd \
+            libssl-dev bc flex bison libelf-dev perl
+
+      - name: Build all packages
+        run: make repo
+
+      - name: List packages
+        run: ls -lh ${{ env.OBJDIR }}/repo/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: packages
+          path: ${{ env.OBJDIR }}/repo/
+          retention-days: 30
+
+  publish:
+    name: Sign and publish
+    runs-on: ubuntu-latest
+    needs: build
+    # Only publish on direct push to main/master, not on PRs or forks
+    if: >
+      github.event_name == 'push' &&
+      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') &&
+      github.repository == github.event.repository.full_name
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: packages
+          path: /tmp/packages/
+
+      - name: Install minisign
+        run: sudo apt-get install -y minisign
+
+      - name: Sign packages
+        env:
+          MINISIGN_PRIVATE_KEY: ${{ secrets.MINISIGN_PRIVATE_KEY }}
+        run: |
+          printf '%s' "$MINISIGN_PRIVATE_KEY" > /tmp/signing.key
+          for bb in /tmp/packages/*.bb; do
+            minisign -S -s /tmp/signing.key -m "$bb" -x "$bb.minisig"
+          done
+          rm /tmp/signing.key
+          echo "Signatures:"
+          ls /tmp/packages/*.minisig
+
+      # Remove this step if your server has a public IP directly reachable from GitHub.
+      - name: Connect to Tailscale
+        uses: tailscale/github-action@v2
+        with:
+          authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
+
+      - name: Publish to repo server
+        env:
+          REPO_SSH_KEY: ${{ secrets.REPO_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s' "$REPO_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          echo "StrictHostKeyChecking accept-new" >> ~/.ssh/config
+          rsync -av --delete /tmp/packages/ \
+            deploy@100.98.169.26:/srv/blueberry/repo/packages/x86_64/
+          echo "Published."

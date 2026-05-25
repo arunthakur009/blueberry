@@ -1,0 +1,42 @@
+# .github/workflows/auto-update.yml — weekly upstream version check
+#
+# Runs tools/check-updates.sh to compare each BBUILD's version against the
+# upstream project. When a newer version is found the script:
+#   1. Patches the BBUILD (version + checksum)
+#   2. Creates a branch  auto-update/<pkg>-<newver>
+#   3. Opens a draft PR for review
+#
+# Required: GITHUB_TOKEN (automatically provided, needs 'contents: write'
+# and 'pull-requests: write' — both granted by the permissions block below).
+
+name: Auto Update
+
+on:
+  schedule:
+    - cron: '0 6 * * 1'   # weekly, Monday 06:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  check:
+    name: Check upstream versions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install tools
+        run: sudo apt-get install -y curl jq wget
+
+      - name: Check for updates and open PRs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_ACTOR: ${{ github.actor }}
+        run: |
+          git config user.name  "Blueberry Bot"
+          git config user.email "bot@blueberry.linux"
+          bash tools/check-updates.sh --pr

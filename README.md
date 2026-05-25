@@ -7,6 +7,9 @@ in the BSD tradition.
 Linux 7.0 kernel · musl libc · busybox · runit init · bpm package manager
 ```
 
+[![Software](https://github.com/zsigisti/blueberry/actions/workflows/software.yml/badge.svg)](https://github.com/zsigisti/blueberry/actions/workflows/software.yml)
+[![Packages](https://github.com/zsigisti/blueberry/actions/workflows/packages.yml/badge.svg)](https://github.com/zsigisti/blueberry/actions/workflows/packages.yml)
+
 ---
 
 ## Quick Start

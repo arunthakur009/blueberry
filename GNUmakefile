@@ -262,6 +262,14 @@ iso: install
 
 # ── Package repository ────────────────────────────────────────────────────────
 repo: bpm
+	@command -v musl-gcc >/dev/null 2>&1 || \
+	    PATH="$(MUSL_SYSROOT)/bin:$$PATH" command -v musl-gcc >/dev/null 2>&1 || { \
+	    echo ""; \
+	    echo "ERROR: musl-gcc not found."; \
+	    echo "  On Ubuntu/Debian:  sudo apt install musl-tools"; \
+	    echo "  On other systems:  run 'make musl' first (builds sysroot + wrapper)"; \
+	    echo ""; \
+	    exit 1; }
 	@echo "[repo] building package index"
 	@mkdir -p $(OBJDIR)/repo
 	@for bbuild in $(shell find $(PKGSDIR) -name BBUILD | sort); do \

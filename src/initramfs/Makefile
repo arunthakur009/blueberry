@@ -32,7 +32,8 @@ $(BOOTDIR)/initramfs.cpio.zst: $(THISDIR)/init
 	@# Create busybox applet symlinks needed in initramfs
 	@for app in sh ash mount umount switch_root mdev blkid sleep \
 	            modprobe insmod lsmod mkdir cp mv rm ln ls cat \
-	            find grep sed awk echo printf head tail; do \
+	            find grep sed awk echo printf head tail \
+	            ip udhcpc wget ping halt poweroff; do \
 	    ln -sf /bin/busybox $(INITRAMDIR)/bin/$$app 2>/dev/null || true; \
 	done
 	@for app in cryptsetup vgchange; do \
@@ -55,6 +56,16 @@ $(BOOTDIR)/initramfs.cpio.zst: $(THISDIR)/init
 	@# Install /init
 	@cp $(THISDIR)/init $(INITRAMDIR)/init
 	@chmod 755 $(INITRAMDIR)/init
+
+	@# Install test-init (activated by kernel cmdline: init=/test-init)
+	@cp $(THISDIR)/test-init $(INITRAMDIR)/test-init
+	@chmod 755 $(INITRAMDIR)/test-init
+
+	@# Install bpm if available in rootfs
+	@if [ -f $(STAGEDIR)/usr/bin/bpm ]; then \
+	    mkdir -p $(INITRAMDIR)/usr/bin; \
+	    cp $(STAGEDIR)/usr/bin/bpm $(INITRAMDIR)/usr/bin/bpm; \
+	fi
 
 	@# Create device nodes
 	@mknod -m 600 $(INITRAMDIR)/dev/console  c 5 1 2>/dev/null || true
