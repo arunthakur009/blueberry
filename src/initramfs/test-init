@@ -56,17 +56,22 @@ check "cat /proc/uptime" cat /proc/uptime
 # 2. Network
 # ─────────────────────────────────────────────────────────────────────────────
 printf '\n--- Network ---\n'
-# Detect first real Ethernet interface (type=1 = ARPHRD_ETHER, skips sit0/lo)
+# e1000 driver initializes concurrently with init — wait up to 5s for it
 ETH=""
-for _iface in $(ls /sys/class/net/ 2>/dev/null); do
-    [ "$(cat /sys/class/net/$_iface/type 2>/dev/null)" = "1" ] && ETH="$_iface" && break
+_tries=0
+while [ $_tries -lt 10 ] && [ -z "$ETH" ]; do
+    for _iface in $(ls /sys/class/net/ 2>/dev/null); do
+        [ "$(cat /sys/class/net/$_iface/type 2>/dev/null)" = "1" ] && ETH="$_iface" && break
+    done
+    [ -z "$ETH" ] && { sleep 0.5; _tries=$((_tries+1)); }
 done
+
 if [ -z "$ETH" ]; then
-    fail "no network interface found"
+    fail "no network interface found (waited 5s)"
 else
     ok "interface: $ETH"
     ip link set "$ETH" up 2>/dev/null || true
-    # QEMU SLIRP always assigns 10.0.2.15/24 — use static config, no DHCP needed
+    # QEMU SLIRP always assigns 10.0.2.15/24; static config, no DHCP needed
     ip addr add 10.0.2.15/24 dev "$ETH" 2>/dev/null || true
     ip route add default via 10.0.2.2 dev "$ETH" 2>/dev/null || true
     check "ping gateway (10.0.2.2)" ping -c 2 -W 3 10.0.2.2
@@ -92,8 +97,13 @@ else
     printf 'name    = "ci"\nurl     = "%s"\nenabled = true\n' \
         "$BPMREPO" > /etc/bpm/repos.d/ci.conf
 
-    check "bpm update"       "$BPM" update
-    check "bpm install zlib" "$BPM" install zlib
+    check "bpm update" "$BPM" update
+    # Verify update actually populated the cache before trying install
+    if "$BPM" search zlib 2>/dev/null | grep -q zlib; then
+        check "bpm install zlib" "$BPM" install zlib
+    else
+        fail "bpm install zlib (index empty — bpm update may have failed silently)"
+    fi
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
