@@ -5,7 +5,8 @@
 #   kernel boots, shell commands work, network comes up, bpm installs packages.
 #
 # Boot with:
-#   -append "console=ttyS0 init=/test-init BPMREPO=http://10.0.2.2:8080"
+#   -append "console=ttyS0 rdinit=/test-init BPMREPO=http://10.0.2.2:8080"
+# (rdinit= runs from initramfs; init= runs after switch_root to real disk)
 #
 # The script prints SMOKE_TEST_RESULT=PASS or SMOKE_TEST_RESULT=FAIL just
 # before powering off. The CI job greps for that string.

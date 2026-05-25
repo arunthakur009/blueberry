@@ -86,7 +86,7 @@ touch "$LOG"
 qemu-system-x86_64 \
     -kernel "$BOOTDIR/vmlinuz" \
     -initrd "$TEST_CPIO" \
-    -append "console=ttyS0 init=/test-init BPMREPO=$BPMREPO" \
+    -append "console=ttyS0 rdinit=/test-init BPMREPO=$BPMREPO" \
     -display none -serial "file:$LOG" -monitor null \
     -no-reboot -m 512M \
     -net nic,model=e1000 -net user \
