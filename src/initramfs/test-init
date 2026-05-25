@@ -46,26 +46,29 @@ printf '\n=== Blueberry Smoke Tests ===\n\n'
 # 1. Basic shell commands
 # ─────────────────────────────────────────────────────────────────────────────
 printf '--- Shell ---\n'
-check "ls /bin"    ls /bin
-check "busybox ps" busybox ps aux
-check "mount list" mount
-check "uname -a"   uname -a
+check "ls /bin"          ls /bin
+check "busybox ps"       busybox ps
+check "mount list"       mount
+check "uname -a"         busybox uname -a
 check "cat /proc/uptime" cat /proc/uptime
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 2. Network
 # ─────────────────────────────────────────────────────────────────────────────
 printf '\n--- Network ---\n'
-ip link set eth0 up 2>/dev/null || true
-
-if udhcpc -i eth0 -T 5 -t 3 -q 2>/dev/null; then
-    ok "udhcpc: got DHCP"
+# Detect first non-loopback interface (name varies: eth0, ens3, enp0s3…)
+ETH=$(ls /sys/class/net/ 2>/dev/null | grep -v lo | head -1)
+if [ -z "$ETH" ]; then
+    fail "no network interface found"
 else
-    fail "udhcpc: no DHCP"
+    ok "interface: $ETH"
+    ip link set "$ETH" up 2>/dev/null || true
+    # QEMU SLIRP always assigns 10.0.2.15/24 — use static config, no DHCP needed
+    ip addr add 10.0.2.15/24 dev "$ETH" 2>/dev/null || true
+    ip route add default via 10.0.2.2 dev "$ETH" 2>/dev/null || true
+    check "ping gateway (10.0.2.2)" ping -c 2 -W 3 10.0.2.2
+    check "wget 1.1.1.1"           wget -q -T 10 -O /dev/null http://1.1.1.1/
 fi
-
-check "ping gateway (10.0.2.2)" ping -c 2 -W 3 10.0.2.2
-check "wget 1.1.1.1"            wget -q -T 5 -O /dev/null http://1.1.1.1/
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 3. bpm

@@ -33,7 +33,8 @@ $(BOOTDIR)/initramfs.cpio.zst: $(THISDIR)/init
 	@for app in sh ash mount umount switch_root mdev blkid sleep \
 	            modprobe insmod lsmod mkdir cp mv rm ln ls cat \
 	            find grep sed awk echo printf head tail \
-	            ip udhcpc wget ping halt poweroff; do \
+	            ip udhcpc wget ping halt poweroff \
+	            uname ps free df; do \
 	    ln -sf /bin/busybox $(INITRAMDIR)/bin/$$app 2>/dev/null || true; \
 	done
 	@for app in cryptsetup vgchange; do \
@@ -61,10 +62,12 @@ $(BOOTDIR)/initramfs.cpio.zst: $(THISDIR)/init
 	@cp $(THISDIR)/test-init $(INITRAMDIR)/test-init
 	@chmod 755 $(INITRAMDIR)/test-init
 
-	@# Install bpm if available in rootfs
+	@# Install bpm — prefer rootfs install, fall back to build output
+	@mkdir -p $(INITRAMDIR)/usr/bin
 	@if [ -f $(STAGEDIR)/usr/bin/bpm ]; then \
-	    mkdir -p $(INITRAMDIR)/usr/bin; \
 	    cp $(STAGEDIR)/usr/bin/bpm $(INITRAMDIR)/usr/bin/bpm; \
+	elif [ -f $(OBJDIR)/bpm ]; then \
+	    cp $(OBJDIR)/bpm $(INITRAMDIR)/usr/bin/bpm; \
 	fi
 
 	@# Create device nodes
