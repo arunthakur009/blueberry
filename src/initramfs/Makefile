@@ -15,7 +15,8 @@ INITRAMDIR := $(OBJDIR)/initramfs
 all: $(BOOTDIR)/initramfs.cpio.zst
 
 $(BOOTDIR)/initramfs.cpio.zst: $(THISDIR)/init $(THISDIR)/selftest \
-                               $(THISDIR)/profile $(THISDIR)/Makefile
+                               $(THISDIR)/profile $(THISDIR)/udhcpc.script \
+                               $(THISDIR)/Makefile
 	@echo "[initramfs] assembling"
 	@rm -rf $(INITRAMDIR)
 	@mkdir -p $(INITRAMDIR)/bin $(INITRAMDIR)/sbin $(INITRAMDIR)/lib \
@@ -66,6 +67,10 @@ $(BOOTDIR)/initramfs.cpio.zst: $(THISDIR)/init $(THISDIR)/selftest \
 
 	@# Install /etc/profile so the interactive shell has a nice prompt
 	@cp $(THISDIR)/profile $(INITRAMDIR)/etc/profile
+
+	@# DHCP lease handler for udhcpc
+	@cp $(THISDIR)/udhcpc.script $(INITRAMDIR)/etc/udhcpc.script
+	@chmod 755 $(INITRAMDIR)/etc/udhcpc.script
 
 	@# Minimal account + hostname so \u resolves and the prompt reads root@blueberry
 	@printf 'root:x:0:0:root:/root:/bin/sh\n' > $(INITRAMDIR)/etc/passwd

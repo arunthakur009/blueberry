@@ -55,6 +55,27 @@ check      "writable /tmp"        sh -c 'echo hi > /tmp/.t && rm -f /tmp/.t'
 # Hostname was applied by /init
 grep_check "hostname"  blueberry  hostname
 
+# Networking: /init brings up lo + DHCP on every Ethernet NIC. Wait up to ~8s
+# for a non-loopback interface to obtain an IPv4 address (QEMU user-net runs a
+# DHCP server handing out 10.0.2.15).
+net_ok=""
+i=0
+while [ $i -lt 16 ]; do
+    for iface in $(ls /sys/class/net 2>/dev/null); do
+        [ "$iface" = lo ] && continue
+        if ip -4 addr show "$iface" 2>/dev/null | grep -q 'inet '; then
+            net_ok="$iface"; break
+        fi
+    done
+    [ -n "$net_ok" ] && break
+    sleep 0.5; i=$((i + 1))
+done
+if [ -n "$net_ok" ]; then
+    ok "DHCP lease on $net_ok ($(ip -4 addr show "$net_ok" | awk '/inet /{print $2}'))"
+else
+    bad "DHCP lease (no IPv4 on any NIC after 8s)"
+fi
+
 # Standalone shell: an applet with NO /bin symlink must still run by bare name.
 # `seq` is deliberately not symlinked in the initramfs, so this only passes
 # when CONFIG_FEATURE_SH_STANDALONE=y is built into busybox.

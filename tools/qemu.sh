@@ -47,12 +47,18 @@ command -v "$QEMU" >/dev/null || { echo "ERROR: $QEMU not found — install QEMU
 [ -f "$KERNEL" ] || { echo "ERROR: $KERNEL not found — run 'make kernel'";     exit 1; }
 [ -f "$INITRD" ] || { echo "ERROR: $INITRD not found — run 'make initramfs'";  exit 1; }
 
+# User-mode networking with an e1000 NIC. QEMU's SLIRP stack runs a DHCP server
+# (hands the guest 10.0.2.15), so /init's udhcpc gets a real lease — networking
+# works with zero host setup and no privileges. e1000 is used over virtio-net
+# because virtio-net has caused silent QEMU exits in this kernel/QEMU combo.
+NET_ARGS=(-nic user,model=e1000)
+
 case "$MODE" in
 # ──────────────────────────────────────────────────────────────────────────────
 run)
     echo "[qemu] booting Blueberry live CLI ($ARCH) — Ctrl-A X to quit"
     echo "──────────────────────────────────────────────────────────"
-    exec "$QEMU" "${MACHINE_ARGS[@]}" \
+    exec "$QEMU" "${MACHINE_ARGS[@]}" "${NET_ARGS[@]}" \
         -kernel "$KERNEL" -initrd "$INITRD" \
         -append "console=$CONSOLE" \
         -m "$MEM" -no-reboot \
@@ -66,7 +72,7 @@ test)
     echo "──────────────────────────────────────────────────────────"
 
     touch "$LOG"
-    "$QEMU" "${MACHINE_ARGS[@]}" \
+    "$QEMU" "${MACHINE_ARGS[@]}" "${NET_ARGS[@]}" \
         -kernel "$KERNEL" -initrd "$INITRD" \
         -append "console=$CONSOLE bbtest quiet" \
         -m "$MEM" -no-reboot \

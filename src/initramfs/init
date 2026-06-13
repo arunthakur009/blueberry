@@ -50,10 +50,36 @@ ROOT=$(cmdline root)
 
 hostname -F /etc/hostname 2>/dev/null || hostname blueberry 2>/dev/null
 
+# ── Networking ────────────────────────────────────────────────────────────────
+# Bring up loopback and DHCP every real Ethernet interface (ARPHRD_ETHER=1).
+# udhcpc -b backgrounds itself and keeps renewing; the lease is applied by
+# /etc/udhcpc.script. Not started on the disk-boot path — runit owns that.
+setup_network() {
+    ip link set lo up 2>/dev/null
+    # NIC drivers (e1000 etc.) probe asynchronously and may not have created
+    # their interface yet; wait briefly for at least one Ethernet device.
+    _n=0
+    while [ $_n -lt 10 ]; do
+        for iface in $(ls /sys/class/net 2>/dev/null); do
+            [ "$iface" = lo ] && continue
+            [ "$(cat /sys/class/net/$iface/type 2>/dev/null)" = "1" ] && _n=99 && break
+        done
+        [ $_n -eq 99 ] && break
+        sleep 0.3; _n=$((_n + 1))
+    done
+    for iface in $(ls /sys/class/net 2>/dev/null); do
+        [ "$iface" = lo ] && continue
+        [ "$(cat /sys/class/net/$iface/type 2>/dev/null)" = "1" ] || continue
+        ip link set "$iface" up 2>/dev/null
+        udhcpc -b -i "$iface" -s /etc/udhcpc.script -t 4 -T 1 2>/dev/null &
+    done
+}
+
 # ── Self-test mode (CI) ───────────────────────────────────────────────────────
 # Boot with `bbtest` on the kernel cmdline to run the automated checks and
 # power off. `make test` greps the serial log for BLUEBERRY_TEST=PASS.
 if [ -n "$BBTEST" ]; then
+    setup_network
     /etc/selftest
     echo o > /proc/sysrq-trigger 2>/dev/null
     poweroff -f 2>/dev/null
@@ -80,6 +106,8 @@ if [ -n "$ROOT" ]; then
 fi
 
 # ── Live CLI ──────────────────────────────────────────────────────────────────
+setup_network
+
 if [ -z "$QUIET" ]; then
     VER=$(uname -r)
     clear 2>/dev/null

@@ -201,7 +201,8 @@ $(STAMP_KERNEL): $(STAMP_FETCH_LINUX) $(TOPDIR)/src/kernel/config | $(BOOTDIR)
 initramfs: $(STAMP_INITRAMFS)
 
 INITRAMFS_SRC := $(wildcard $(SRCDIR)/initramfs/init $(SRCDIR)/initramfs/selftest \
-                            $(SRCDIR)/initramfs/profile $(SRCDIR)/initramfs/Makefile)
+                            $(SRCDIR)/initramfs/profile $(SRCDIR)/initramfs/udhcpc.script \
+                            $(SRCDIR)/initramfs/Makefile)
 $(STAMP_INITRAMFS): $(STAMP_BUSYBOX) $(STAMP_RUNIT) $(INITRAMFS_SRC) | $(BOOTDIR)
 	@echo "[build] initramfs"
 	@$(MAKE) -C $(SRCDIR)/initramfs \
