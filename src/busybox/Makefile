@@ -1,8 +1,8 @@
-# src/busybox/Makefile — build busybox linked against musl
+# src/busybox/Makefile — build busybox linked against the host glibc
 #
 # Inputs:
 #   BUSYBOX_SRC  path to extracted busybox source
-#   SYSROOT      musl sysroot (for CC wrapper)
+#   CC           host C compiler (glibc)
 #   STAGEDIR     install root (the OS rootfs being assembled)
 #   ARCH
 
@@ -11,8 +11,7 @@ THISDIR      := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 # defconfig + our settings.  No kconfig tools required in CI.
 BB_CONFIG    := $(THISDIR)/config.full
 
-# musl-gcc wrapper puts -I/-L for musl automatically
-MUSL_GCC := $(SYSROOT)/bin/musl-gcc
+CC ?= gcc
 
 .PHONY: all
 
@@ -21,15 +20,14 @@ all: $(STAGEDIR)/bin/busybox
 $(STAGEDIR)/bin/busybox: $(BUSYBOX_SRC)/Makefile $(BB_CONFIG)
 	@echo "[busybox] installing config"
 	@cp $(BB_CONFIG) $(BUSYBOX_SRC)/.config
-	@echo "[busybox] building"
+	@echo "[busybox] building (dynamic, glibc)"
 	@$(MAKE) -C $(BUSYBOX_SRC) \
-	    CC="$(MUSL_GCC)" \
+	    CC="$(CC)" \
 	    EXTRA_CFLAGS="-Os -pipe" \
-	    LDFLAGS="--static" \
 	    -j$(JOBS)
 	@echo "[busybox] installing applets"
 	@$(MAKE) -C $(BUSYBOX_SRC) \
-	    CC="$(MUSL_GCC)" \
+	    CC="$(CC)" \
 	    CONFIG_PREFIX=$(STAGEDIR) \
 	    install
 	@echo "[busybox] done"

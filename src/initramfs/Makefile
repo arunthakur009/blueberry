@@ -50,12 +50,7 @@ $(BOOTDIR)/initramfs.cpio.zst: $(THISDIR)/init $(THISDIR)/selftest \
 	        cp $(STAGEDIR)/sbin/$$app $(INITRAMDIR)/sbin/ 2>/dev/null || true; \
 	done
 
-	@# Copy musl dynamic linker if busybox is dynamic
-	@if ldd $(STAGEDIR)/bin/busybox 2>/dev/null | grep -q musl; then \
-	    musl_ld=$$(ldd $(STAGEDIR)/bin/busybox 2>/dev/null | \
-	              grep -o '/lib/ld-musl[^ ]*' | head -1); \
-	    [ -n "$$musl_ld" ] && cp "$$musl_ld" $(INITRAMDIR)/lib/; \
-	fi
+	@# (glibc runtime is bundled near the end, once all binaries are in place)
 
 	@# Install /init (live CLI entry point)
 	@cp $(THISDIR)/init $(INITRAMDIR)/init
@@ -102,6 +97,14 @@ $(BOOTDIR)/initramfs.cpio.zst: $(THISDIR)/init $(THISDIR)/selftest \
 	@mknod -m 444 $(INITRAMDIR)/dev/urandom  c 1 9 2>/dev/null || true
 	@mknod -m 444 $(INITRAMDIR)/dev/random   c 1 8 2>/dev/null || true
 	@mknod -m 666 $(INITRAMDIR)/dev/tty      c 5 0 2>/dev/null || true
+
+	@# Bundle the glibc runtime: the ELF interpreter + the shared libs every
+	@# binary here needs, plus the compat set + NSS modules, so the dynamic
+	@# busybox/dropbear run AND external prebuilt glibc software works.
+	@echo "[initramfs] bundling glibc runtime"
+	@bash $(THISDIR)/../../tools/bundle-glibc.sh $(INITRAMDIR) \
+	    $(INITRAMDIR)/bin/busybox \
+	    $(INITRAMDIR)/usr/sbin/dropbearmulti
 
 	@# Pack as CPIO
 	@echo "[initramfs] packing"

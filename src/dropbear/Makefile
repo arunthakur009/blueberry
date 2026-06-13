@@ -1,14 +1,14 @@
-# src/dropbear/Makefile — build Dropbear SSH (server + client) against musl
+# src/dropbear/Makefile — build Dropbear SSH (server + client) against glibc
 #
 # Inputs:
 #   DROPBEAR_SRC  path to extracted dropbear source
-#   SYSROOT       musl sysroot (for the musl-gcc wrapper)
+#   CC            host C compiler (glibc)
 #   STAGEDIR      install root (the OS rootfs being assembled)
 #
-# Builds a single static multi-call binary (dropbearmulti) — like busybox — and
+# Builds a single multi-call binary (dropbearmulti) — like busybox — and
 # installs it with applet symlinks: dropbear, dropbearkey, dbclient, scp.
 
-MUSL_GCC := $(SYSROOT)/bin/musl-gcc
+CC ?= gcc
 PROGRAMS := dropbear dropbearkey dbclient scp
 
 .PHONY: all
@@ -27,13 +27,11 @@ $(STAGEDIR)/usr/sbin/dropbear: $(DROPBEAR_SRC)/dropbearmulti
 $(DROPBEAR_SRC)/dropbearmulti:
 	@echo "[dropbear] configuring"
 	@cd $(DROPBEAR_SRC) && \
-	    CC="$(MUSL_GCC)" ./configure \
-	        --host=$(shell uname -m)-linux-musl \
+	    CC="$(CC)" ./configure \
 	        --disable-zlib \
 	        --disable-lastlog --disable-utmp --disable-utmpx \
-	        --disable-wtmp --disable-wtmpx \
-	        --enable-static >/dev/null
-	@echo "[dropbear] building multi-binary"
+	        --disable-wtmp --disable-wtmpx >/dev/null
+	@echo "[dropbear] building multi-binary (dynamic, glibc)"
 	@$(MAKE) -C $(DROPBEAR_SRC) \
-	    PROGRAMS="$(PROGRAMS)" MULTI=1 STATIC=1 \
+	    PROGRAMS="$(PROGRAMS)" MULTI=1 \
 	    SCPPROGRESS=1

@@ -2,10 +2,10 @@
 #
 # Inputs:
 #   RUNIT_SRC   path to admin/runit-X.Y source
-#   SYSROOT     musl sysroot
+#   CC          host C compiler (glibc)
 #   STAGEDIR    install root
 
-MUSL_GCC := $(SYSROOT)/bin/musl-gcc
+CC ?= gcc
 
 .PHONY: all install_services
 
@@ -23,9 +23,12 @@ all: $(RUNIT_SRC)/command/runit
 	@$(MAKE) install_services
 
 $(RUNIT_SRC)/command/runit:
-	@echo "[runit] building"
-	@printf '%s -std=gnu11 -static -Wno-incompatible-pointer-types -Wno-implicit-function-declaration -Wno-implicit-int\n' "$(MUSL_GCC)" > $(RUNIT_SRC)/src/conf-cc
-	@printf '%s -static\n' "$(MUSL_GCC)" > $(RUNIT_SRC)/src/conf-ld
+	@echo "[runit] building (dynamic, glibc)"
+	@printf '%s -std=gnu11 -Wno-incompatible-pointer-types -Wno-implicit-function-declaration -Wno-implicit-int\n' "$(CC)" > $(RUNIT_SRC)/src/conf-cc
+	@printf '%s\n' "$(CC)" > $(RUNIT_SRC)/src/conf-ld
+	@# runit's src/Makefile hard-codes `-static` on the runit/runit-init link
+	@# lines; strip it so they link dynamically against glibc.
+	@sed -i 's/ -static//g' $(RUNIT_SRC)/src/Makefile
 	@cd $(RUNIT_SRC) && sh package/compile
 
 install_services:

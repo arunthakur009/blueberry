@@ -1,9 +1,9 @@
 # GNUmakefile — Blueberry Linux top-level build system
 #
 # Primary targets
-#   make world        Build everything: musl, busybox, runit, kernel, initramfs
+#   make world        Build everything: busybox, runit, dropbear, kernel, initramfs
 #   make kernel       Build the Linux kernel and modules
-#   make userland     Build musl + busybox + runit
+#   make userland     Build busybox + runit + dropbear (glibc, dynamic)
 #   make initramfs    Build the initramfs image
 #   make run          Boot the live CLI in QEMU (interactive)
 #   make test         Boot in QEMU, run self-tests, verify PASS (headless)
@@ -32,21 +32,15 @@ BOOTDIR     := $(OBJDIR)/boot
 STAGEDIR    := $(DESTDIR)
 
 LINUX_SRC      := $(OBJDIR_SRC)/linux-$(LINUX_VERSION)
-MUSL_SRC       := $(OBJDIR_SRC)/musl-$(MUSL_VERSION)
 BUSYBOX_SRC    := $(OBJDIR_SRC)/busybox-$(BUSYBOX_VERSION)
 RUNIT_SRC      := $(OBJDIR_SRC)/runit-$(RUNIT_VERSION)
 DROPBEAR_SRC   := $(OBJDIR_SRC)/dropbear-$(DROPBEAR_VERSION)
 
-MUSL_SYSROOT   := $(OBJDIR)/sysroot
-
 # ── Stamp files (track completed build steps) ─────────────────────────────────
 STAMP_FETCH_LINUX    := $(OBJDIR)/.stamp-fetch-linux
-STAMP_FETCH_MUSL     := $(OBJDIR)/.stamp-fetch-musl
 STAMP_FETCH_BUSYBOX  := $(OBJDIR)/.stamp-fetch-busybox
 STAMP_FETCH_RUNIT    := $(OBJDIR)/.stamp-fetch-runit
 STAMP_FETCH_DROPBEAR := $(OBJDIR)/.stamp-fetch-dropbear
-STAMP_KERNEL_HEADERS := $(OBJDIR)/.stamp-kernel-headers
-STAMP_MUSL           := $(OBJDIR)/.stamp-musl
 STAMP_BUSYBOX        := $(OBJDIR)/.stamp-busybox
 STAMP_RUNIT          := $(OBJDIR)/.stamp-runit
 STAMP_DROPBEAR       := $(OBJDIR)/.stamp-dropbear
@@ -57,7 +51,6 @@ STAMP_INSTALL        := $(OBJDIR)/.stamp-install
 # ── Kernel tarball URL (kernel.org CDN format) ────────────────────────────────
 LINUX_MAJOR   := $(firstword $(subst ., ,$(LINUX_VERSION)))
 LINUX_URL     := https://cdn.kernel.org/pub/linux/kernel/v$(LINUX_MAJOR).x/linux-$(LINUX_VERSION).tar.xz
-MUSL_URL      := https://musl.libc.org/releases/musl-$(MUSL_VERSION).tar.gz
 BUSYBOX_URL   := https://busybox.net/downloads/busybox-$(BUSYBOX_VERSION).tar.bz2
 RUNIT_URL     := http://smarden.org/runit/runit-$(RUNIT_VERSION).tar.gz
 DROPBEAR_URL  := https://matt.ucc.asn.au/dropbear/releases/dropbear-$(DROPBEAR_VERSION).tar.bz2
@@ -73,7 +66,7 @@ TAR  := tar
 
 # ── Default goal ─────────────────────────────────────────────────────────────
 .DEFAULT_GOAL := world
-.PHONY: world kernel kernel-headers userland musl busybox runit dropbear initramfs \
+.PHONY: world kernel userland busybox runit dropbear initramfs \
         install iso disk run test fetch clean distclean help _check_tools
 
 world: userland kernel initramfs
@@ -90,7 +83,7 @@ world: userland kernel initramfs
 	@echo "  Run 'make install' to install into DESTDIR=$(STAGEDIR)"
 
 # ── Fetch ─────────────────────────────────────────────────────────────────────
-fetch: $(STAMP_FETCH_LINUX) $(STAMP_FETCH_MUSL) $(STAMP_FETCH_BUSYBOX) $(STAMP_FETCH_RUNIT)
+fetch: $(STAMP_FETCH_LINUX) $(STAMP_FETCH_BUSYBOX) $(STAMP_FETCH_RUNIT) $(STAMP_FETCH_DROPBEAR)
 
 $(STAMP_FETCH_LINUX): | $(OBJDIR_SRC)
 	@echo "[fetch] linux-$(LINUX_VERSION)"
@@ -99,16 +92,6 @@ $(STAMP_FETCH_LINUX): | $(OBJDIR_SRC)
 	fi
 	@if [ ! -d $(LINUX_SRC) ]; then \
 	    $(TAR) -xJf $(OBJDIR_SRC)/linux-$(LINUX_VERSION).tar.xz -C $(OBJDIR_SRC); \
-	fi
-	@touch $@
-
-$(STAMP_FETCH_MUSL): | $(OBJDIR_SRC)
-	@echo "[fetch] musl-$(MUSL_VERSION)"
-	@if [ ! -f $(OBJDIR_SRC)/musl-$(MUSL_VERSION).tar.gz ]; then \
-	    $(WGET_CMD) $(OBJDIR_SRC)/musl-$(MUSL_VERSION).tar.gz $(MUSL_URL); \
-	fi
-	@if [ ! -d $(MUSL_SRC) ]; then \
-	    $(TAR) -xzf $(OBJDIR_SRC)/musl-$(MUSL_VERSION).tar.gz -C $(OBJDIR_SRC); \
 	fi
 	@touch $@
 
@@ -142,38 +125,14 @@ $(STAMP_FETCH_DROPBEAR): | $(OBJDIR_SRC)
 	fi
 	@touch $@
 
-# ── Kernel headers (needed by musl and busybox) ───────────────────────────────
-kernel-headers: $(STAMP_KERNEL_HEADERS)
-
-$(STAMP_KERNEL_HEADERS): $(STAMP_FETCH_LINUX) | $(MUSL_SYSROOT)
-	@echo "[kernel-headers] installing to $(MUSL_SYSROOT)/usr"
-	@$(MAKE) -C $(LINUX_SRC) \
-	    ARCH=$(ARCH) \
-	    INSTALL_HDR_PATH=$(MUSL_SYSROOT)/usr \
-	    headers_install
-	@touch $@
-
-# ── musl libc ─────────────────────────────────────────────────────────────────
-musl: $(STAMP_MUSL)
-
-$(STAMP_MUSL): $(STAMP_FETCH_MUSL) $(STAMP_KERNEL_HEADERS) | $(MUSL_SYSROOT)
-	@echo "[build] musl-$(MUSL_VERSION)"
-	@$(MAKE) -C $(SRCDIR)/lib/musl \
-	    MUSL_SRC=$(MUSL_SRC) \
-	    SYSROOT=$(MUSL_SYSROOT) \
-	    ARCH=$(ARCH) \
-	    CC="$(CC)" CFLAGS="$(CFLAGS)" \
-	    -j$(JOBS)
-	@touch $@
-
 # ── busybox ───────────────────────────────────────────────────────────────────
 busybox: $(STAMP_BUSYBOX)
 
-$(STAMP_BUSYBOX): $(STAMP_FETCH_BUSYBOX) $(STAMP_MUSL) $(SRCDIR)/busybox/config.full | $(STAGEDIR)
+$(STAMP_BUSYBOX): $(STAMP_FETCH_BUSYBOX) $(SRCDIR)/busybox/config.full | $(STAGEDIR)
 	@echo "[build] busybox-$(BUSYBOX_VERSION)"
 	@$(MAKE) -C $(SRCDIR)/busybox \
 	    BUSYBOX_SRC=$(BUSYBOX_SRC) \
-	    SYSROOT=$(MUSL_SYSROOT) \
+	    CC="$(CC)" \
 	    STAGEDIR=$(STAGEDIR) \
 	    ARCH=$(ARCH) \
 	    -j$(JOBS)
@@ -182,11 +141,11 @@ $(STAMP_BUSYBOX): $(STAMP_FETCH_BUSYBOX) $(STAMP_MUSL) $(SRCDIR)/busybox/config.
 # ── runit ─────────────────────────────────────────────────────────────────────
 runit: $(STAMP_RUNIT)
 
-$(STAMP_RUNIT): $(STAMP_FETCH_RUNIT) $(STAMP_MUSL) | $(STAGEDIR)
+$(STAMP_RUNIT): $(STAMP_FETCH_RUNIT) | $(STAGEDIR)
 	@echo "[build] runit-$(RUNIT_VERSION)"
 	@$(MAKE) -C $(SRCDIR)/init \
 	    RUNIT_SRC=$(OBJDIR_SRC)/admin/runit-$(RUNIT_VERSION) \
-	    SYSROOT=$(MUSL_SYSROOT) \
+	    CC="$(CC)" \
 	    STAGEDIR=$(STAGEDIR) \
 	    ARCH=$(ARCH) \
 	    -j$(JOBS)
@@ -195,17 +154,17 @@ $(STAMP_RUNIT): $(STAMP_FETCH_RUNIT) $(STAMP_MUSL) | $(STAGEDIR)
 # ── dropbear (SSH server + client) ────────────────────────────────────────────
 dropbear: $(STAMP_DROPBEAR)
 
-$(STAMP_DROPBEAR): $(STAMP_FETCH_DROPBEAR) $(STAMP_MUSL) $(SRCDIR)/dropbear/Makefile | $(STAGEDIR)
+$(STAMP_DROPBEAR): $(STAMP_FETCH_DROPBEAR) $(SRCDIR)/dropbear/Makefile | $(STAGEDIR)
 	@echo "[build] dropbear-$(DROPBEAR_VERSION)"
 	@$(MAKE) -C $(SRCDIR)/dropbear \
 	    DROPBEAR_SRC=$(DROPBEAR_SRC) \
-	    SYSROOT=$(MUSL_SYSROOT) \
+	    CC="$(CC)" \
 	    STAGEDIR=$(STAGEDIR) \
 	    -j$(JOBS)
 	@touch $@
 
 # ── userland ──────────────────────────────────────────────────────────────────
-userland: musl busybox runit dropbear
+userland: busybox runit dropbear
 
 # ── Linux kernel ─────────────────────────────────────────────────────────────
 kernel: $(STAMP_KERNEL)
@@ -259,6 +218,12 @@ _do_install:
 	@chmod 711  $(STAGEDIR)/var/empty
 	@# /init → runit-init
 	@ln -sf /sbin/runit-init $(STAGEDIR)/init 2>/dev/null || true
+	@# Bundle the glibc runtime into the rootfs (disk-boot path + external
+	@# prebuilt glibc software).
+	@bash $(TOPDIR)/tools/bundle-glibc.sh $(STAGEDIR) \
+	    $(STAGEDIR)/bin/busybox \
+	    $(STAGEDIR)/sbin/runit-init \
+	    $(STAGEDIR)/usr/sbin/dropbearmulti
 	@# Copy boot assets (kernel + initramfs) into rootfs/boot for mkiso.sh
 	@cp $(BOOTDIR)/vmlinuz              $(STAGEDIR)/boot/vmlinuz
 	@cp $(BOOTDIR)/initramfs.cpio.zst   $(STAGEDIR)/boot/initramfs.cpio.zst
@@ -294,7 +259,7 @@ test:
 	@BOOTDIR=$(BOOTDIR) ARCH=$(ARCH) bash $(TOPDIR)/tools/qemu.sh test
 
 # ── Directory creation ────────────────────────────────────────────────────────
-$(OBJDIR_SRC) $(MUSL_SYSROOT) $(STAGEDIR) $(BOOTDIR) $(OBJDIR):
+$(OBJDIR_SRC) $(STAGEDIR) $(BOOTDIR) $(OBJDIR):
 	@mkdir -p $@
 
 # ── Utility targets ───────────────────────────────────────────────────────────
@@ -323,10 +288,10 @@ help:
 	@echo "OS build targets:"
 	@echo "  world          Build everything (default)"
 	@echo "  kernel         Build Linux $(LINUX_VERSION) kernel + modules"
-	@echo "  userland       Build musl + busybox + runit"
-	@echo "  musl           Build musl libc sysroot"
+	@echo "  userland       Build busybox + runit + dropbear (glibc, dynamic)"
 	@echo "  busybox        Build busybox"
 	@echo "  runit          Build runit init"
+	@echo "  dropbear       Build Dropbear SSH"
 	@echo "  initramfs      Build initramfs image"
 	@echo "  install        Install world into DESTDIR=$(STAGEDIR)"
 	@echo "  iso            Build a bootable hybrid BIOS+UEFI ISO"
@@ -344,5 +309,5 @@ help:
 	@echo ""
 	@echo "Variables (override with VAR=value):"
 	@echo "  ARCH=$(ARCH)  JOBS=$(JOBS)  DESTDIR=$(DESTDIR)"
-	@echo "  LINUX_VERSION=$(LINUX_VERSION)  MUSL_VERSION=$(MUSL_VERSION)"
+	@echo "  LINUX_VERSION=$(LINUX_VERSION)  BUSYBOX_VERSION=$(BUSYBOX_VERSION)"
 	@echo "  CROSS_COMPILE=$(CROSS_COMPILE)"
