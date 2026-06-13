@@ -40,15 +40,21 @@ busybox shell. No disk image, no install step, no network required.
 | Component | Choice | Why |
 |-----------|--------|-----|
 | C library | **musl 1.2.x** | Small, correct, static-friendly |
-| Core utilities | **busybox 1.36.x** | Single binary, 300+ applets |
+| Core utilities | **busybox 1.36.x** | Single binary, 300+ applets, standalone shell |
 | Init | **runit 2.1.x** | Supervision tree, 35 KB, no DSL |
-| Kernel | **Linux 7.0** | Server profile, serial console, PCI |
+| SSH | **Dropbear 2024.x** | Tiny static SSH server + client |
+| Kernel | **Linux 7.0** | Server profile: SATA/NVMe/USB, NICs, UEFI, serial console |
 | Distro model | **BSD-style monorepo** | `git clone` → `make world` → bootable; build output in `../blueberry-build/` |
 
 The system boots as a **live CLI**: the kernel loads an initramfs that runs
-straight into an interactive shell. Booting a real disk install is optional —
-pass `root=<device>` on the kernel command line and `/init` will mount it and
-hand off to runit instead.
+straight into an interactive shell, brings up networking (DHCP on every NIC),
+and starts SSH (Dropbear) and time sync (ntpd). Booting a real disk install is
+optional — pass `root=<device>` on the kernel command line and `/init` will
+mount it and hand off to runit instead.
+
+Log in over SSH as `root` (default password `blueberry` — change it for real
+deployments). Deploy to bare metal with `make iso` or `make disk`; see
+[doc/DEPLOY.md](doc/DEPLOY.md).
 
 ---
 
@@ -63,7 +69,8 @@ src/
   lib/musl/         musl libc build rules
   busybox/          busybox config + Makefile
   init/             runit stage scripts + service dirs (disk-boot path)
-  initramfs/        /init live-CLI script, selftest, profile, Makefile
+  dropbear/         Dropbear SSH build rules
+  initramfs/        /init live-CLI script, selftest, profile, udhcpc, Makefile
 
 etc/                /etc skeleton (hostname, fstab, sysctl, accounts)
 tools/              Host-only scripts: qemu.sh (run/test), mkiso.sh
