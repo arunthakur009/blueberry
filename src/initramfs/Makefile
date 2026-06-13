@@ -36,7 +36,7 @@ $(BOOTDIR)/initramfs.cpio.zst: $(THISDIR)/init $(THISDIR)/selftest \
 	            modprobe insmod lsmod mkdir cp mv rm ln ls cat \
 	            find grep sed awk echo printf head tail dmesg clear \
 	            ip udhcpc wget ping halt poweroff reboot vi more \
-	            uname ps free df hostname date cttyhack; do \
+	            uname ps free df hostname date cttyhack ntpd netstat; do \
 	    ln -sf /bin/busybox $(INITRAMDIR)/bin/$$app 2>/dev/null || true; \
 	done
 	@for app in cryptsetup vgchange; do \
