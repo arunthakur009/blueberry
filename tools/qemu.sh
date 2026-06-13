@@ -51,12 +51,15 @@ command -v "$QEMU" >/dev/null || { echo "ERROR: $QEMU not found — install QEMU
 # (hands the guest 10.0.2.15), so /init's udhcpc gets a real lease — networking
 # works with zero host setup and no privileges. e1000 is used over virtio-net
 # because virtio-net has caused silent QEMU exits in this kernel/QEMU combo.
-NET_ARGS=(-nic user,model=e1000)
+# hostfwd maps host :2222 -> guest :22 so you can `ssh -p 2222 root@localhost`.
+SSH_PORT="${SSH_PORT:-2222}"
+NET_ARGS=(-nic "user,model=e1000,hostfwd=tcp::${SSH_PORT}-:22")
 
 case "$MODE" in
 # ──────────────────────────────────────────────────────────────────────────────
 run)
     echo "[qemu] booting Blueberry live CLI ($ARCH) — Ctrl-A X to quit"
+    echo "[qemu] SSH:  ssh -p ${SSH_PORT} root@localhost   (password: blueberry)"
     echo "──────────────────────────────────────────────────────────"
     exec "$QEMU" "${MACHINE_ARGS[@]}" "${NET_ARGS[@]}" \
         -kernel "$KERNEL" -initrd "$INITRD" \

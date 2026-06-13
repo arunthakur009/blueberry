@@ -35,6 +35,7 @@ LINUX_SRC      := $(OBJDIR_SRC)/linux-$(LINUX_VERSION)
 MUSL_SRC       := $(OBJDIR_SRC)/musl-$(MUSL_VERSION)
 BUSYBOX_SRC    := $(OBJDIR_SRC)/busybox-$(BUSYBOX_VERSION)
 RUNIT_SRC      := $(OBJDIR_SRC)/runit-$(RUNIT_VERSION)
+DROPBEAR_SRC   := $(OBJDIR_SRC)/dropbear-$(DROPBEAR_VERSION)
 
 MUSL_SYSROOT   := $(OBJDIR)/sysroot
 
@@ -43,10 +44,12 @@ STAMP_FETCH_LINUX    := $(OBJDIR)/.stamp-fetch-linux
 STAMP_FETCH_MUSL     := $(OBJDIR)/.stamp-fetch-musl
 STAMP_FETCH_BUSYBOX  := $(OBJDIR)/.stamp-fetch-busybox
 STAMP_FETCH_RUNIT    := $(OBJDIR)/.stamp-fetch-runit
+STAMP_FETCH_DROPBEAR := $(OBJDIR)/.stamp-fetch-dropbear
 STAMP_KERNEL_HEADERS := $(OBJDIR)/.stamp-kernel-headers
 STAMP_MUSL           := $(OBJDIR)/.stamp-musl
 STAMP_BUSYBOX        := $(OBJDIR)/.stamp-busybox
 STAMP_RUNIT          := $(OBJDIR)/.stamp-runit
+STAMP_DROPBEAR       := $(OBJDIR)/.stamp-dropbear
 STAMP_KERNEL         := $(OBJDIR)/.stamp-kernel
 STAMP_INITRAMFS      := $(OBJDIR)/.stamp-initramfs
 STAMP_INSTALL        := $(OBJDIR)/.stamp-install
@@ -57,6 +60,7 @@ LINUX_URL     := https://cdn.kernel.org/pub/linux/kernel/v$(LINUX_MAJOR).x/linux
 MUSL_URL      := https://musl.libc.org/releases/musl-$(MUSL_VERSION).tar.gz
 BUSYBOX_URL   := https://busybox.net/downloads/busybox-$(BUSYBOX_VERSION).tar.bz2
 RUNIT_URL     := http://smarden.org/runit/runit-$(RUNIT_VERSION).tar.gz
+DROPBEAR_URL  := https://matt.ucc.asn.au/dropbear/releases/dropbear-$(DROPBEAR_VERSION).tar.bz2
 
 # ── Utilities ─────────────────────────────────────────────────────────────────
 # Download: wget -O outfile url  OR  curl -fL -o outfile url
@@ -69,8 +73,8 @@ TAR  := tar
 
 # ── Default goal ─────────────────────────────────────────────────────────────
 .DEFAULT_GOAL := world
-.PHONY: world kernel kernel-headers userland musl busybox runit initramfs install \
-        iso disk run test fetch clean distclean help _check_tools
+.PHONY: world kernel kernel-headers userland musl busybox runit dropbear initramfs \
+        install iso disk run test fetch clean distclean help _check_tools
 
 world: userland kernel initramfs
 	@echo ""
@@ -128,6 +132,16 @@ $(STAMP_FETCH_RUNIT): | $(OBJDIR_SRC)
 	fi
 	@touch $@
 
+$(STAMP_FETCH_DROPBEAR): | $(OBJDIR_SRC)
+	@echo "[fetch] dropbear-$(DROPBEAR_VERSION)"
+	@if [ ! -f $(OBJDIR_SRC)/dropbear-$(DROPBEAR_VERSION).tar.bz2 ]; then \
+	    $(WGET_CMD) $(OBJDIR_SRC)/dropbear-$(DROPBEAR_VERSION).tar.bz2 $(DROPBEAR_URL); \
+	fi
+	@if [ ! -d $(DROPBEAR_SRC) ]; then \
+	    $(TAR) -xjf $(OBJDIR_SRC)/dropbear-$(DROPBEAR_VERSION).tar.bz2 -C $(OBJDIR_SRC); \
+	fi
+	@touch $@
+
 # ── Kernel headers (needed by musl and busybox) ───────────────────────────────
 kernel-headers: $(STAMP_KERNEL_HEADERS)
 
@@ -178,8 +192,20 @@ $(STAMP_RUNIT): $(STAMP_FETCH_RUNIT) $(STAMP_MUSL) | $(STAGEDIR)
 	    -j$(JOBS)
 	@touch $@
 
+# ── dropbear (SSH server + client) ────────────────────────────────────────────
+dropbear: $(STAMP_DROPBEAR)
+
+$(STAMP_DROPBEAR): $(STAMP_FETCH_DROPBEAR) $(STAMP_MUSL) $(SRCDIR)/dropbear/Makefile | $(STAGEDIR)
+	@echo "[build] dropbear-$(DROPBEAR_VERSION)"
+	@$(MAKE) -C $(SRCDIR)/dropbear \
+	    DROPBEAR_SRC=$(DROPBEAR_SRC) \
+	    SYSROOT=$(MUSL_SYSROOT) \
+	    STAGEDIR=$(STAGEDIR) \
+	    -j$(JOBS)
+	@touch $@
+
 # ── userland ──────────────────────────────────────────────────────────────────
-userland: musl busybox runit
+userland: musl busybox runit dropbear
 
 # ── Linux kernel ─────────────────────────────────────────────────────────────
 kernel: $(STAMP_KERNEL)
@@ -202,8 +228,8 @@ initramfs: $(STAMP_INITRAMFS)
 
 INITRAMFS_SRC := $(wildcard $(SRCDIR)/initramfs/init $(SRCDIR)/initramfs/selftest \
                             $(SRCDIR)/initramfs/profile $(SRCDIR)/initramfs/udhcpc.script \
-                            $(SRCDIR)/initramfs/Makefile)
-$(STAMP_INITRAMFS): $(STAMP_BUSYBOX) $(STAMP_RUNIT) $(INITRAMFS_SRC) | $(BOOTDIR)
+                            $(SRCDIR)/initramfs/shadow $(SRCDIR)/initramfs/Makefile)
+$(STAMP_INITRAMFS): $(STAMP_BUSYBOX) $(STAMP_RUNIT) $(STAMP_DROPBEAR) $(INITRAMFS_SRC) | $(BOOTDIR)
 	@echo "[build] initramfs"
 	@$(MAKE) -C $(SRCDIR)/initramfs \
 	    STAGEDIR=$(STAGEDIR) \

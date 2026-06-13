@@ -1,8 +1,6 @@
 #!/bin/sh
-# Generate host keys if missing
-[ -f /etc/ssh/ssh_host_ed25519_key ] || \
-    ssh-keygen -t ed25519 -f /etc/ssh/ssh_host_ed25519_key -N '' -q
-[ -f /etc/ssh/ssh_host_rsa_key ] || \
-    ssh-keygen -t rsa -b 4096 -f /etc/ssh/ssh_host_rsa_key -N '' -q
-
-exec /usr/sbin/sshd -D -e
+# Dropbear SSH server (disk-boot / runit path).
+# -F: foreground (runit supervises it).  -E: log to stderr (svlogd captures it).
+# -R: generate host keys on demand, stored in /etc/dropbear.
+mkdir -p /etc/dropbear
+exec /usr/sbin/dropbear -F -E -R -p 22

@@ -16,7 +16,7 @@ all: $(BOOTDIR)/initramfs.cpio.zst
 
 $(BOOTDIR)/initramfs.cpio.zst: $(THISDIR)/init $(THISDIR)/selftest \
                                $(THISDIR)/profile $(THISDIR)/udhcpc.script \
-                               $(THISDIR)/Makefile
+                               $(THISDIR)/shadow $(THISDIR)/Makefile
 	@echo "[initramfs] assembling"
 	@rm -rf $(INITRAMDIR)
 	@mkdir -p $(INITRAMDIR)/bin $(INITRAMDIR)/sbin $(INITRAMDIR)/lib \
@@ -76,6 +76,23 @@ $(BOOTDIR)/initramfs.cpio.zst: $(THISDIR)/init $(THISDIR)/selftest \
 	@printf 'root:x:0:0:root:/root:/bin/sh\n' > $(INITRAMDIR)/etc/passwd
 	@printf 'root:x:0:\n'                     > $(INITRAMDIR)/etc/group
 	@printf 'blueberry\n'                     > $(INITRAMDIR)/etc/hostname
+
+	@# Default root credentials for SSH (password: blueberry — change in production)
+	@cp $(THISDIR)/shadow $(INITRAMDIR)/etc/shadow
+	@chmod 600 $(INITRAMDIR)/etc/shadow
+
+	@# Dropbear SSH server + client (single static multi-call binary)
+	@mkdir -p $(INITRAMDIR)/usr/sbin $(INITRAMDIR)/usr/bin $(INITRAMDIR)/root/.ssh
+	@if [ -f $(STAGEDIR)/usr/sbin/dropbearmulti ]; then \
+	    cp $(STAGEDIR)/usr/sbin/dropbearmulti $(INITRAMDIR)/usr/sbin/dropbearmulti; \
+	    ln -sf dropbearmulti $(INITRAMDIR)/usr/sbin/dropbear; \
+	    ln -sf dropbearmulti $(INITRAMDIR)/usr/sbin/dropbearkey; \
+	    ln -sf ../sbin/dropbearmulti $(INITRAMDIR)/usr/bin/dbclient; \
+	    ln -sf ../sbin/dropbearmulti $(INITRAMDIR)/usr/bin/scp; \
+	    mkdir -p $(INITRAMDIR)/etc/dropbear; \
+	else \
+	    echo "WARNING: dropbear not built — run 'make dropbear' (no SSH in image)"; \
+	fi
 
 	@# Create device nodes
 	@mknod -m 600 $(INITRAMDIR)/dev/console  c 5 1 2>/dev/null || true

@@ -76,6 +76,23 @@ else
     bad "DHCP lease (no IPv4 on any NIC after 8s)"
 fi
 
+# SSH: Dropbear should be listening on TCP 22. Port 22 = 0x0016, LISTEN = 0A
+# in /proc/net/tcp{,6}. Wait a moment for the daemon (and its host-key gen).
+ssh_ok=""
+i=0
+while [ $i -lt 10 ]; do
+    if awk '$2 ~ /:0016$/ && $4 == "0A" {found=1} END{exit !found}' \
+         /proc/net/tcp /proc/net/tcp6 2>/dev/null; then
+        ssh_ok=1; break
+    fi
+    sleep 0.5; i=$((i + 1))
+done
+if [ -n "$ssh_ok" ]; then
+    ok "dropbear SSH listening on :22"
+else
+    bad "dropbear SSH not listening on :22"
+fi
+
 # Standalone shell: an applet with NO /bin symlink must still run by bare name.
 # `seq` is deliberately not symlinked in the initramfs, so this only passes
 # when CONFIG_FEATURE_SH_STANDALONE=y is built into busybox.

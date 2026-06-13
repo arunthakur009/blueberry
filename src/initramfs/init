@@ -75,11 +75,22 @@ setup_network() {
     done
 }
 
+# ── SSH ───────────────────────────────────────────────────────────────────────
+# Start the Dropbear SSH server. -R auto-generates host keys on first use (kept
+# in /etc/dropbear, RAM). Log in as root with the default password "blueberry"
+# (set in /etc/shadow) — change it in any real deployment.
+start_sshd() {
+    [ -x /usr/sbin/dropbear ] || return 0
+    mkdir -p /etc/dropbear
+    dropbear -R -p 22 2>/dev/null &
+}
+
 # ── Self-test mode (CI) ───────────────────────────────────────────────────────
 # Boot with `bbtest` on the kernel cmdline to run the automated checks and
 # power off. `make test` greps the serial log for BLUEBERRY_TEST=PASS.
 if [ -n "$BBTEST" ]; then
     setup_network
+    start_sshd
     /etc/selftest
     echo o > /proc/sysrq-trigger 2>/dev/null
     poweroff -f 2>/dev/null
@@ -107,6 +118,7 @@ fi
 
 # ── Live CLI ──────────────────────────────────────────────────────────────────
 setup_network
+start_sshd
 
 if [ -z "$QUIET" ]; then
     VER=$(uname -r)

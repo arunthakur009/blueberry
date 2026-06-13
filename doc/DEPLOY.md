@@ -115,9 +115,32 @@ enhancement; for now mount it by hand or from a startup script.
 
 ---
 
+## Networking & SSH
+
+`/init` brings up loopback and runs DHCP (`udhcpc`) on every Ethernet NIC at
+boot, and starts the **Dropbear** SSH server on port 22 (host keys are
+generated on first use into `/etc/dropbear`).
+
+The image ships with a **default root password: `blueberry`** (in
+`/etc/shadow`). Log in with:
+
+```sh
+ssh root@<the-box-ip>          # password: blueberry
+```
+
+> **Change this before any real deployment.** Set a new password with
+> `passwd` (interactive) or replace `/etc/shadow`, and/or drop your key in
+> `/root/.ssh/authorized_keys` and disable password auth.
+
+Under `make run` the guest's SSH is forwarded to the host:
+
+```sh
+ssh -p 2222 root@localhost     # password: blueberry
+```
+
 ## What this is *not* (yet)
 
 - No partitioning installer that runs *on* the target and carves up an existing
   disk — you `dd` a prebuilt image instead.
-- No SSH server or DHCP-at-boot yet (see the roadmap) — the deployed box is a
-  local console system until those land.
+- The live CLI runs from RAM, so SSH host keys and any password change are
+  ephemeral unless you persist them on the data partition.
