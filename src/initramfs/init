@@ -1,204 +1,107 @@
 #!/bin/sh
-# /init — Blueberry Linux initramfs entry point
+# /init — Blueberry Linux initramfs entry point (PID 1)
 #
-# This script runs as PID 1 inside the initramfs before the real root
-# is mounted. It must find, optionally decrypt, and mount the root
-# filesystem, then switch_root into it and exec runit-init.
+# Blueberry boots as a self-contained live CLI: the kernel loads this
+# initramfs and runs straight into an interactive busybox shell. No disk,
+# no package manager, no network required.
 #
 # Kernel command-line parameters understood:
-#   root=<device|label|uuid>   root filesystem device (REQUIRED)
-#   rootfstype=<type>           filesystem type (default: auto)
-#   rootflags=<flags>           extra mount flags (default: ro)
-#   rootdelay=<seconds>         wait before looking for root (default: 0)
-#   init=<path>                 init executable (default: /sbin/runit-init)
-#   quiet                       suppress most output
-#   debug                       verbose shell tracing
-#   rescue                      drop to emergency shell instead of booting
-#   luks=<device>               LUKS device to open before mounting root
-#   luks.name=<name>            LUKS mapping name (default: cryptroot)
-#   luks.keyfile=<path>         key file inside initramfs (optional)
-#   lvm=<vg/lv>                 LVM logical volume to activate
+#   bbtest                run the in-guest self-test, print result, power off
+#   root=<dev|LABEL|UUID> mount that device and switch_root into it instead
+#   rootfstype=<type>     filesystem type for root= (default: auto)
+#   rootflags=<flags>     mount flags for root= (default: ro)
+#   init=<path>           init to exec after switch_root (default: /sbin/runit-init)
+#   quiet                 suppress the banner and most output
+#   debug                 verbose shell tracing
 
-# ── Strict mode ───────────────────────────────────────────────────────────────
-set -e
 export PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export HOME=/root TERM="${TERM:-linux}"
 
-# ── Emergency shell ───────────────────────────────────────────────────────────
-rescue() {
-    echo ""
-    echo "*** INITRAMFS RESCUE SHELL ***"
-    echo "Type 'exit' or Ctrl+D to attempt to continue boot."
-    echo ""
-    exec sh
-}
-trap rescue EXIT
+# ── Mount the early filesystems ───────────────────────────────────────────────
+mount -t proc     proc     /proc       2>/dev/null
+mount -t sysfs    sysfs    /sys        2>/dev/null
+mount -t devtmpfs devtmpfs /dev        2>/dev/null || \
+    mount -t tmpfs devtmpfs /dev -o nosuid,mode=0755
+mkdir -p /dev/pts /dev/shm /run /tmp /root
+mount -t devpts devpts /dev/pts -o nosuid,noexec,gid=5,mode=620 2>/dev/null
+mount -t tmpfs  shm    /dev/shm -o nosuid,nodev                 2>/dev/null
+mount -t tmpfs  run    /run     -o nosuid,nodev,mode=755        2>/dev/null
+chmod 1777 /tmp 2>/dev/null
+
+# ── Populate /dev from sysfs ──────────────────────────────────────────────────
+[ -x /bin/mdev ] && mdev -s 2>/dev/null
 
 # ── Parse /proc/cmdline ───────────────────────────────────────────────────────
 cmdline() {
-    local param="$1"
-    local val
-    val=$(cat /proc/cmdline)
-    for token in $val; do
-        case "$token" in
-            "$param")    echo "1"; return ;;
-            "$param"=*)  echo "${token#*=}"; return ;;
+    for tok in $(cat /proc/cmdline 2>/dev/null); do
+        case "$tok" in
+            "$1")   echo 1; return ;;
+            "$1"=*) echo "${tok#*=}"; return ;;
         esac
     done
-    echo ""
 }
 
-# ── Mount early filesystems ───────────────────────────────────────────────────
-mount -t proc    proc    /proc
-mount -t sysfs   sysfs   /sys
-mount -t devtmpfs devtmpfs /dev 2>/dev/null || \
-    mount -t tmpfs devtmpfs /dev -o nosuid,mode=0755
-mkdir -p /dev/pts /dev/shm /run
-mount -t devpts  devpts  /dev/pts -o nosuid,noexec,gid=5,mode=620
-mount -t tmpfs   shm     /dev/shm -o nosuid,nodev
-mount -t tmpfs   run     /run     -o nosuid,nodev,mode=755
-
-# ── Populate /dev ─────────────────────────────────────────────────────────────
-[ -x /sbin/mdev ] && mdev -s
-
-# ── Kernel command-line ───────────────────────────────────────────────────────
-ROOT=$(cmdline root)
-ROOTFSTYPE=$(cmdline rootfstype)
-ROOTFLAGS=$(cmdline rootflags)
-ROOTDELAY=$(cmdline rootdelay)
-INIT=$(cmdline init)
 QUIET=$(cmdline quiet)
 DEBUG=$(cmdline debug)
-RESCUE=$(cmdline rescue)
-LUKS_DEV=$(cmdline luks)
-LUKS_NAME=$(cmdline luks.name)
-LUKS_KEY=$(cmdline luks.keyfile)
-LVM_VOL=$(cmdline lvm)
-
-: "${ROOTFSTYPE:=auto}"
-: "${ROOTFLAGS:=ro}"
-: "${ROOTDELAY:=0}"
-: "${INIT:=/sbin/runit-init}"
-: "${LUKS_NAME:=cryptroot}"
+BBTEST=$(cmdline bbtest)
+ROOT=$(cmdline root)
 
 [ -n "$DEBUG" ] && set -x
-[ -n "$RESCUE" ] && rescue
 
-# ── Logging ───────────────────────────────────────────────────────────────────
-log() {
-    [ -z "$QUIET" ] && echo "[init] $*"
-    echo "[init] $*" >> /run/initramfs.log 2>/dev/null || true
-}
-die() {
-    echo "[FATAL] $*" >&2
-    rescue
-}
+hostname -F /etc/hostname 2>/dev/null || hostname blueberry 2>/dev/null
 
-# ── Validate root= was given ──────────────────────────────────────────────────
-[ -z "$ROOT" ] && die "root= not specified on kernel command line"
-
-log "Blueberry Linux initramfs"
-log "root=$ROOT rootfstype=$ROOTFSTYPE rootflags=$ROOTFLAGS"
-
-# ── Wait for root device ──────────────────────────────────────────────────────
-if [ "$ROOTDELAY" -gt 0 ] 2>/dev/null; then
-    log "Waiting ${ROOTDELAY}s for root device..."
-    sleep "$ROOTDELAY"
+# ── Self-test mode (CI) ───────────────────────────────────────────────────────
+# Boot with `bbtest` on the kernel cmdline to run the automated checks and
+# power off. `make test` greps the serial log for BLUEBERRY_TEST=PASS.
+if [ -n "$BBTEST" ]; then
+    /etc/selftest
+    echo o > /proc/sysrq-trigger 2>/dev/null
+    poweroff -f 2>/dev/null
+    exec sh
 fi
 
-# ── Resolve root device ───────────────────────────────────────────────────────
-# Supports: /dev/sdXN, LABEL=xxx, UUID=xxx, PARTUUID=xxx
-resolve_device() {
-    local spec="$1"
-    case "$spec" in
-        UUID=*)
-            local uuid="${spec#UUID=}"
-            local dev
-            dev=$(blkid -t UUID="$uuid" -o device 2>/dev/null | head -1)
-            [ -n "$dev" ] && echo "$dev" && return
-            ;;
-        LABEL=*)
-            local lbl="${spec#LABEL=}"
-            local dev
-            dev=$(blkid -t LABEL="$lbl" -o device 2>/dev/null | head -1)
-            [ -n "$dev" ] && echo "$dev" && return
-            ;;
-        PARTUUID=*)
-            local puuid="${spec#PARTUUID=}"
-            local dev
-            dev=$(blkid -t PARTUUID="$puuid" -o device 2>/dev/null | head -1)
-            [ -n "$dev" ] && echo "$dev" && return
-            ;;
-        *)
-            echo "$spec"
-            return
-            ;;
-    esac
-    echo ""
-}
-
-wait_for_device() {
-    local dev="$1"
-    local retries=20
-    while [ $retries -gt 0 ]; do
-        [ -b "$dev" ] && return 0
-        mdev -s 2>/dev/null || true
-        sleep 0.5
-        retries=$((retries - 1))
-    done
-    return 1
-}
-
-ROOTDEV=$(resolve_device "$ROOT")
-[ -z "$ROOTDEV" ] && die "Could not resolve root device: $ROOT"
-
-log "Waiting for root device $ROOTDEV..."
-wait_for_device "$ROOTDEV" || die "Root device $ROOTDEV not found"
-
-# ── LUKS decryption (optional) ────────────────────────────────────────────────
-if [ -n "$LUKS_DEV" ]; then
-    LUKS_REAL=$(resolve_device "$LUKS_DEV")
-    log "Opening LUKS device $LUKS_REAL → /dev/mapper/$LUKS_NAME"
-    if [ -n "$LUKS_KEY" ] && [ -f "$LUKS_KEY" ]; then
-        cryptsetup luksOpen --key-file "$LUKS_KEY" \
-            "$LUKS_REAL" "$LUKS_NAME" \
-            || die "LUKS open failed"
-    else
-        # Prompt for passphrase on the console
-        cryptsetup luksOpen "$LUKS_REAL" "$LUKS_NAME" \
-            || die "LUKS open failed"
+# ── Disk boot mode (optional) ─────────────────────────────────────────────────
+# If root= was given, mount it and hand off to the real init. Otherwise we
+# run as a live system entirely from RAM.
+if [ -n "$ROOT" ]; then
+    ROOTFSTYPE=$(cmdline rootfstype); : "${ROOTFSTYPE:=auto}"
+    ROOTFLAGS=$(cmdline rootflags);   : "${ROOTFLAGS:=ro}"
+    INIT=$(cmdline init);             : "${INIT:=/sbin/runit-init}"
+    mkdir -p /mnt/root
+    if mount -t "$ROOTFSTYPE" -o "$ROOTFLAGS" "$ROOT" /mnt/root 2>/dev/null \
+       && [ -x "/mnt/root$INIT" ]; then
+        for d in proc sys dev run; do
+            mkdir -p "/mnt/root/$d"
+            mount --move "/$d" "/mnt/root/$d" 2>/dev/null
+        done
+        exec switch_root /mnt/root "$INIT"
     fi
-    # If root= points to the raw device, redirect to the mapped device
-    case "$ROOTDEV" in
-        "$LUKS_REAL") ROOTDEV="/dev/mapper/$LUKS_NAME" ;;
-    esac
+    echo "init: could not boot root=$ROOT — falling back to live shell" >&2
 fi
 
-# ── LVM activation (optional) ─────────────────────────────────────────────────
-if [ -n "$LVM_VOL" ]; then
-    log "Activating LVM"
-    vgchange -ay 2>/dev/null || true
+# ── Live CLI ──────────────────────────────────────────────────────────────────
+if [ -z "$QUIET" ]; then
+    VER=$(uname -r)
+    clear 2>/dev/null
+    cat <<EOF
+
+   _     _                _
+  | |__ | |_   _  ___| |__   ___ _ __ _ __ _   _
+  | '_ \\| | | | |/ _ \\ '_ \\ / _ \\ '__| '__| | | |
+  | |_) | | |_| |  __/ |_) |  __/ |  | |  | |_| |
+  |_.__/|_|\\__,_|\\___|_.__/ \\___|_|  |_|   \\__, |
+                                           |___/   Linux
+
+  Blueberry Linux — live CLI   ·   kernel $VER
+  Type 'help' for busybox applets.  Ctrl-A X quits QEMU.
+
+EOF
 fi
 
-# ── Mount root filesystem ─────────────────────────────────────────────────────
-log "Mounting $ROOTDEV → /mnt/root ($ROOTFSTYPE, $ROOTFLAGS)"
-mkdir -p /mnt/root
-mount -t "$ROOTFSTYPE" -o "$ROOTFLAGS" "$ROOTDEV" /mnt/root \
-    || die "Failed to mount $ROOTDEV"
-
-# ── Verify init exists ────────────────────────────────────────────────────────
-[ -x "/mnt/root$INIT" ] || die "$INIT not found on root filesystem"
-
-# ── Move mounts into real root ────────────────────────────────────────────────
-log "Switching root"
-for dir in proc sys dev run; do
-    mkdir -p /mnt/root/$dir
-    mount --move /$dir /mnt/root/$dir 2>/dev/null || true
+# Hand the controlling terminal to an interactive login shell. cttyhack gives
+# us a controlling tty so job control (Ctrl-C, fg/bg) works on the console;
+# setsid + the respawn loop means exiting the shell just starts a fresh one
+# instead of panicking PID 1.
+while : ; do
+    setsid cttyhack /bin/sh -l 2>/dev/null || /bin/sh -l
 done
-
-# ── Copy log to real root ─────────────────────────────────────────────────────
-cp /run/initramfs.log /mnt/root/run/initramfs.log 2>/dev/null || true
-
-# ── Switch root and exec real init ───────────────────────────────────────────
-trap - EXIT
-log "exec $INIT"
-exec switch_root /mnt/root "$INIT"

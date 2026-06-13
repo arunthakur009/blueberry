@@ -1,0 +1,64 @@
+#!/bin/sh
+# /etc/selftest — in-guest smoke test for the Blueberry live CLI.
+#
+# Invoked by /init when the kernel is booted with `bbtest` on its cmdline.
+# Prints a PASS/FAIL line per check and a final BLUEBERRY_TEST=PASS|FAIL
+# marker that `make test` greps for from the serial log.
+
+PASS=0
+FAIL=0
+
+ok()   { PASS=$((PASS + 1)); printf 'PASS: %s\n' "$1"; }
+bad()  { FAIL=$((FAIL + 1)); printf 'FAIL: %s\n' "$1"; }
+
+# check <name> <cmd...> — pass if the command exits 0
+check() {
+    name="$1"; shift
+    if out=$("$@" 2>&1); then
+        ok "$name"
+    else
+        bad "$name"
+        printf '      %s\n' "$out"
+    fi
+}
+
+# grep_check <name> <pattern> <cmd...> — pass if output matches the pattern
+grep_check() {
+    name="$1"; pat="$2"; shift 2
+    if "$@" 2>&1 | grep -q "$pat"; then
+        ok "$name"
+    else
+        bad "$name"
+    fi
+}
+
+printf '\n=== Blueberry CLI self-test ===\n\n'
+
+# Core shell + coreutils applets
+check      "busybox present"     test -x /bin/busybox
+check      "sh works"            sh -c 'exit 0'
+grep_check "echo"        hello   echo hello
+grep_check "ls /bin"     busybox ls /bin
+grep_check "uname -s"    Linux   uname -s
+
+# Pseudo-filesystems mounted by /init
+check      "/proc mounted"       test -f /proc/cpuinfo
+check      "/sys mounted"        test -d /sys/class
+check      "/dev populated"      test -c /dev/null
+grep_check "mount table"  proc   mount
+
+# Process + system introspection
+grep_check "ps lists init"  init  ps
+check      "uptime readable"      cat /proc/uptime
+check      "writable /tmp"        sh -c 'echo hi > /tmp/.t && rm -f /tmp/.t'
+
+# Hostname was applied by /init
+grep_check "hostname"  blueberry  hostname
+
+printf '\n=== %d passed, %d failed ===\n' "$PASS" "$FAIL"
+if [ "$FAIL" -eq 0 ]; then
+    printf 'BLUEBERRY_TEST=PASS\n'
+else
+    printf 'BLUEBERRY_TEST=FAIL\n'
+fi
+printf '\n'

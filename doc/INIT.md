@@ -208,43 +208,19 @@ runit-init 1      # halt
 
 ## 8. Alternative Init Systems
 
-Blueberry is designed for init freedom. To replace runit:
+runit is used only on the optional disk-boot path; the live CLI runs straight
+from the initramfs and needs no init system at all. If you want a different
+init on a disk install, build it from source into the rootfs (add it under
+`src/`, link it from `make world`) and repoint `/sbin/init` at it:
 
-### 8.1  s6 + s6-rc
+- **s6 + s6-rc** — `ln -sf /usr/bin/s6-linux-init-bin /sbin/init`; convert the
+  runit service dirs with `s6-rc-compile`.
+- **OpenRC** — `ln -sf /sbin/openrc-init /sbin/init`; services live in
+  `/etc/init.d/`, runlevels replace stage 2.
+- **dinit** — `ln -sf /sbin/dinit /sbin/init`; services in `/etc/dinit.d/`.
 
-```sh
-bpm install s6 s6-rc
-
-# Replace /sbin/init symlink
-ln -sf /usr/bin/s6-linux-init-bin /sbin/init
-
-# Convert runit service dirs to s6 format
-s6-rc-compile /etc/s6-rc/compiled /etc/s6-rc/source
-```
-
-See `pkgs/extra/s6/BBUILD` and `pkgs/extra/s6-rc/BBUILD`.
-
-### 8.2  OpenRC
-
-```sh
-bpm install openrc
-
-ln -sf /sbin/openrc-init /sbin/init
-```
-
-OpenRC services go in `/etc/init.d/`. The equivalent of stage 2 is handled
-by OpenRC runlevels.
-
-### 8.3  dinit
-
-```sh
-bpm install dinit
-
-ln -sf /sbin/dinit /sbin/init
-```
-
-dinit services are defined in `/etc/dinit.d/` with a simple key=value
-syntax and support dependency ordering and parallel activation.
+Boot the chosen init by passing `init=/sbin/init` (or any path) on the kernel
+command line alongside `root=`. systemd is not supported.
 
 ---
 

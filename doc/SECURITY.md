@@ -1,39 +1,24 @@
 # Security
 
-## 1. Package Integrity
+## 1. Image Integrity
 
-### Checksums
+Blueberry has no package manager and no post-install package downloads, which
+removes an entire class of supply-chain risk: the running system is exactly
+what `make world` produced from the source tree.
 
-Every `.bb` archive contains a `.CHECKSUMS` file with SHA-256 hashes of all
-installed files. `bpm verify` uses these to detect post-install modifications.
-
-Every package in the repository index (`BBINDEX.zst`) includes the SHA-256
-of the `.bb` archive itself. bpm verifies this before extraction.
-
-### Package signing
-
-Production repositories sign every `.bb` with minisign (Ed25519). The
-signature is stored as `<package>.bb.minisig` alongside the archive.
-
-bpm verifies signatures when:
-- `REPO_SIGN=1` is set in bpm.conf (the server default)
-- A public key is present in `/etc/bpm/trusted-keys/`
-
-To add a trusted key:
-```sh
-# Download the repo's public key
-wget -O /etc/bpm/trusted-keys/core.pub \
-    https://bb.mmzsigmond.me/keys/blueberry-repo.pub
-```
-
-To generate a signing key pair (repository maintainers only):
-```sh
-minisign -G -s blueberry.key -p blueberry.pub \
-    -c "Blueberry Linux package repository signing key"
-```
-
-Keep `blueberry.key` in an offline vault. The passphrase protects it if the
-file is stolen, but there is no passphrase substitution for offline storage.
+- **Pinned sources.** Upstream versions are pinned in `Make.config`
+  (`LINUX_VERSION`, `MUSL_VERSION`, `BUSYBOX_VERSION`, `RUNIT_VERSION`).
+  Changing one is a reviewable, atomic commit.
+- **Verify what you ship.** The build artefacts under `../blueberry-build/boot/`
+  (`vmlinuz`, `initramfs.cpio.zst`) are the only things that boot. Hash them
+  and record the digests for a release:
+  ```sh
+  sha256sum ../blueberry-build/boot/vmlinuz \
+            ../blueberry-build/boot/initramfs.cpio.zst
+  ```
+- **Audit the userland.** Everything in the live CLI is a single busybox
+  binary plus the scripts in `src/initramfs/`. There is no opaque package
+  database to trust.
 
 ---
 
@@ -97,7 +82,8 @@ net.ipv6.conf.all.accept_redirects = 0
 
 ## 4. SSH Hardening
 
-The default `sshd_config` shipped in `pkgs/core/openssh/BBUILD`:
+The default `sshd_config` for the disk-boot path (sshd runs as a runit service,
+`src/init/sv/sshd/`):
 
 ```
 PermitRootLogin no             Never allow direct root login

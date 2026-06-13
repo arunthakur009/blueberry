@@ -1,0 +1,12 @@
+# /etc/profile — sourced by the live CLI login shell
+
+export PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export HOME=/root
+export PS1='\u@\h:\w\$ '
+export TERM="${TERM:-linux}"
+
+alias ll='ls -l'
+alias la='ls -la'
+
+umask 022
+cd "$HOME" 2>/dev/null || cd /

@@ -267,7 +267,7 @@ make kernel KERNEL_CONFIG=src/kernel/config.debug
 The source tree targets a specific kernel version (`LINUX_VERSION` in
 `Make.config`). Updating the kernel requires:
 
-1. Updating `LINUX_VERSION` in `Make.config` and `pkgs/core/linux-headers/BBUILD`.
+1. Updating `LINUX_VERSION` in `Make.config`.
 2. Running `make kernel` to verify the new version builds.
 3. Running `make olddefconfig` and reviewing any new CONFIG_ options.
 4. Updating `src/kernel/config` with the result.

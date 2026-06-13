@@ -1,13 +1,14 @@
 # GNUmakefile — Blueberry Linux top-level build system
 #
 # Primary targets
-#   make world        Build everything: musl, busybox, runit, bpm, kernel, initramfs
+#   make world        Build everything: musl, busybox, runit, kernel, initramfs
 #   make kernel       Build the Linux kernel and modules
-#   make userland     Build musl + busybox + runit + bpm
+#   make userland     Build musl + busybox + runit
 #   make initramfs    Build the initramfs image
+#   make run          Boot the live CLI in QEMU (interactive)
+#   make test         Boot in QEMU, run self-tests, verify PASS (headless)
 #   make iso          Build a bootable ISO
 #   make install      Install the built world into DESTDIR
-#   make repo         Build a package repository from all BBUILD recipes
 #   make fetch        Download all upstream sources
 #   make clean        Remove all build artefacts
 #   make distclean    Also remove all downloaded sources
@@ -23,7 +24,6 @@ include $(TOPDIR)/Make.config
 
 # ── Computed paths ────────────────────────────────────────────────────────────
 SRCDIR  := $(TOPDIR)/src
-PKGSDIR := $(TOPDIR)/pkgs
 ETCDIR  := $(TOPDIR)/etc
 
 OBJDIR_SRC  := $(OBJDIR)/src
@@ -35,11 +35,8 @@ LINUX_SRC      := $(OBJDIR_SRC)/linux-$(LINUX_VERSION)
 MUSL_SRC       := $(OBJDIR_SRC)/musl-$(MUSL_VERSION)
 BUSYBOX_SRC    := $(OBJDIR_SRC)/busybox-$(BUSYBOX_VERSION)
 RUNIT_SRC      := $(OBJDIR_SRC)/runit-$(RUNIT_VERSION)
-OPENSSL_SRC    := $(OBJDIR_SRC)/openssl-$(OPENSSL_VERSION)
-ZLIB_SRC       := $(OBJDIR_SRC)/zlib-$(ZLIB_VERSION)
 
 MUSL_SYSROOT   := $(OBJDIR)/sysroot
-BPM_BIN        := $(OBJDIR)/bpm
 
 # ── Stamp files (track completed build steps) ─────────────────────────────────
 STAMP_FETCH_LINUX    := $(OBJDIR)/.stamp-fetch-linux
@@ -50,7 +47,6 @@ STAMP_KERNEL_HEADERS := $(OBJDIR)/.stamp-kernel-headers
 STAMP_MUSL           := $(OBJDIR)/.stamp-musl
 STAMP_BUSYBOX        := $(OBJDIR)/.stamp-busybox
 STAMP_RUNIT          := $(OBJDIR)/.stamp-runit
-STAMP_BPM            := $(OBJDIR)/.stamp-bpm
 STAMP_KERNEL         := $(OBJDIR)/.stamp-kernel
 STAMP_INITRAMFS      := $(OBJDIR)/.stamp-initramfs
 STAMP_INSTALL        := $(OBJDIR)/.stamp-install
@@ -73,8 +69,8 @@ TAR  := tar
 
 # ── Default goal ─────────────────────────────────────────────────────────────
 .DEFAULT_GOAL := world
-.PHONY: world kernel kernel-headers userland musl busybox runit bpm initramfs install \
-        iso repo pkg upgrade-pkg smoke-test fetch clean distclean help _check_tools
+.PHONY: world kernel kernel-headers userland musl busybox runit initramfs install \
+        iso run test fetch clean distclean help _check_tools
 
 world: userland kernel initramfs
 	@echo ""
@@ -182,21 +178,8 @@ $(STAMP_RUNIT): $(STAMP_FETCH_RUNIT) $(STAMP_MUSL) | $(STAGEDIR)
 	    -j$(JOBS)
 	@touch $@
 
-# ── bpm ───────────────────────────────────────────────────────────────────────
-bpm: $(STAMP_BPM)
-
-$(STAMP_BPM): $(shell find $(SRCDIR)/bpm -name '*.go') $(SRCDIR)/bpm/go.mod
-	@echo "[build] bpm"
-	@$(MAKE) -C $(SRCDIR)/bpm \
-	    OUT=$(BPM_BIN) \
-	    GO=$(GO) \
-	    GOFLAGS="$(GOFLAGS)" \
-	    GO_LDFLAGS="$(GO_LDFLAGS)" \
-	    ARCH=$(ARCH)
-	@touch $@
-
 # ── userland ──────────────────────────────────────────────────────────────────
-userland: musl busybox runit bpm
+userland: musl busybox runit
 
 # ── Linux kernel ─────────────────────────────────────────────────────────────
 kernel: $(STAMP_KERNEL)
@@ -217,7 +200,9 @@ $(STAMP_KERNEL): $(STAMP_FETCH_LINUX) $(TOPDIR)/src/kernel/config | $(BOOTDIR)
 # ── initramfs ─────────────────────────────────────────────────────────────────
 initramfs: $(STAMP_INITRAMFS)
 
-$(STAMP_INITRAMFS): $(STAMP_BUSYBOX) $(STAMP_RUNIT) | $(BOOTDIR)
+INITRAMFS_SRC := $(wildcard $(SRCDIR)/initramfs/init $(SRCDIR)/initramfs/selftest \
+                            $(SRCDIR)/initramfs/profile $(SRCDIR)/initramfs/Makefile)
+$(STAMP_INITRAMFS): $(STAMP_BUSYBOX) $(STAMP_RUNIT) $(INITRAMFS_SRC) | $(BOOTDIR)
 	@echo "[build] initramfs"
 	@$(MAKE) -C $(SRCDIR)/initramfs \
 	    STAGEDIR=$(STAGEDIR) \
@@ -236,8 +221,6 @@ _do_install:
 	@# Copy /etc skeleton
 	@mkdir -p $(STAGEDIR)/etc
 	@cp -a $(ETCDIR)/. $(STAGEDIR)/etc/
-	@# Install bpm binary
-	@install -Dm755 $(BPM_BIN) $(STAGEDIR)/usr/bin/bpm
 	@# Create FHS directories
 	@for d in proc sys dev dev/pts dev/shm run tmp var/log var/empty \
 	          var/spool/cron/crontabs root home mnt srv boot \
@@ -260,58 +243,17 @@ iso: install
 	@$(TOPDIR)/tools/mkiso.sh $(STAGEDIR) \
 	    blueberry-$(shell date +%Y%m%d)-$(ARCH).iso
 
-# ── Package repository ────────────────────────────────────────────────────────
-repo: bpm
-	@command -v musl-gcc >/dev/null 2>&1 || \
-	    PATH="$(MUSL_SYSROOT)/bin:$$PATH" command -v musl-gcc >/dev/null 2>&1 || { \
-	    echo ""; \
-	    echo "ERROR: musl-gcc not found."; \
-	    echo "  On Ubuntu/Debian:  sudo apt install musl-tools"; \
-	    echo "  On other systems:  run 'make musl' first (builds sysroot + wrapper)"; \
-	    echo ""; \
-	    exit 1; }
-	@echo "[repo] building package index"
-	@mkdir -p $(OBJDIR)/repo
-	@for bbuild in $(shell find $(PKGSDIR) -name BBUILD | sort); do \
-	    PATH="$(MUSL_SYSROOT)/bin:$$PATH" \
-	    $(BPM_BIN) build \
-	        --output $(OBJDIR)/repo \
-	        --arch $(ARCH) \
-	        --topdir $(TOPDIR) \
-	        $$bbuild || exit 1; \
-	done
-	@$(TOPDIR)/tools/mkrepo.sh $(OBJDIR)/repo
-	@echo "[repo] index written to $(OBJDIR)/repo/BBINDEX.zst"
+# ── QEMU: boot the live CLI ───────────────────────────────────────────────────
+# Boot the kernel + initramfs in QEMU and drop straight into an interactive
+# Blueberry shell. Ctrl-A X quits QEMU. Requires: make kernel + make initramfs.
+run:
+	@BOOTDIR=$(BOOTDIR) ARCH=$(ARCH) bash $(TOPDIR)/tools/qemu.sh run
 
-# ── Single-package build ──────────────────────────────────────────────────────
-# Build one package from source without running the full repo target.
-# Usage:  make pkg PKG=musl
-#         make pkg PKG=zlib ARCH=aarch64
-pkg: bpm
-	$(if $(PKG),,$(error PKG is not set. Usage: make pkg PKG=<name>))
-	@BBUILD=$$(find $(PKGSDIR) -path "*/$(PKG)/BBUILD" | head -1); \
-	[ -n "$$BBUILD" ] || { echo "Package '$(PKG)' not found in pkgs/"; exit 1; }; \
-	echo "[pkg] building $(PKG)"; \
-	PATH="$(MUSL_SYSROOT)/bin:$$PATH" \
-	$(BPM_BIN) build \
-	    --output $(OBJDIR)/repo \
-	    --arch $(ARCH) \
-	    --topdir $(TOPDIR) \
-	    $$BBUILD
-
-# Bump a package to its latest upstream version, then build it.
-# Usage:  make upgrade-pkg PKG=musl
-#         make upgrade-pkg PKG=zlib VERSION=1.3.2
-upgrade-pkg:
-	$(if $(PKG),,$(error PKG is not set. Usage: make upgrade-pkg PKG=<name> [VERSION=x.y.z]))
-	@bash $(TOPDIR)/tools/bump-package.sh $(PKG) $(VERSION)
-	@$(MAKE) pkg PKG=$(PKG)
-
-# Boot Blueberry in QEMU with a smoke-test init and verify PASS.
-# Requires: make world (or at least make kernel + make initramfs)
-# The packages repo is built automatically if not already present.
-smoke-test:
-	@bash $(TOPDIR)/tools/smoke-test.sh
+# ── QEMU: automated self-test ─────────────────────────────────────────────────
+# Boot headless, run the in-guest self-tests, and assert BLUEBERRY_TEST=PASS.
+# This is what CI runs. Exits non-zero on failure.
+test:
+	@BOOTDIR=$(BOOTDIR) ARCH=$(ARCH) bash $(TOPDIR)/tools/qemu.sh test
 
 # ── Directory creation ────────────────────────────────────────────────────────
 $(OBJDIR_SRC) $(MUSL_SYSROOT) $(STAGEDIR) $(BOOTDIR) $(OBJDIR):
@@ -321,9 +263,8 @@ $(OBJDIR_SRC) $(MUSL_SYSROOT) $(STAGEDIR) $(BOOTDIR) $(OBJDIR):
 clean:
 	@echo "[clean] removing build artefacts"
 	@rm -rf $(OBJDIR)/build $(OBJDIR)/boot $(OBJDIR)/rootfs \
-	        $(OBJDIR)/sysroot $(OBJDIR)/bpm $(OBJDIR)/repo \
+	        $(OBJDIR)/sysroot $(OBJDIR)/initramfs \
 	        $(OBJDIR)/.stamp-* $(OBJDIR_SRC)/admin
-	@$(MAKE) -C $(SRCDIR)/bpm clean 2>/dev/null || true
 
 distclean: clean
 	@echo "[distclean] removing all downloaded sources"
@@ -331,9 +272,10 @@ distclean: clean
 
 _check_tools:
 	@command -v $(CC) >/dev/null   || { echo "ERROR: $(CC) not found"; exit 1; }
-	@command -v $(GO)  >/dev/null  || { echo "ERROR: go not found (need >=1.22)"; exit 1; }
 	@command -v wget   >/dev/null  || command -v curl >/dev/null || \
 	    { echo "ERROR: wget or curl required"; exit 1; }
+	@command -v zstd   >/dev/null  || { echo "ERROR: zstd required (initramfs)"; exit 1; }
+	@command -v cpio   >/dev/null  || { echo "ERROR: cpio required (initramfs)"; exit 1; }
 	@echo "Toolchain OK"
 
 help:
@@ -342,21 +284,17 @@ help:
 	@echo "OS build targets:"
 	@echo "  world          Build everything (default)"
 	@echo "  kernel         Build Linux $(LINUX_VERSION) kernel + modules"
-	@echo "  userland       Build musl + busybox + runit + bpm"
+	@echo "  userland       Build musl + busybox + runit"
 	@echo "  musl           Build musl libc sysroot"
 	@echo "  busybox        Build busybox"
 	@echo "  runit          Build runit init"
-	@echo "  bpm            Build the package manager"
 	@echo "  initramfs      Build initramfs image"
 	@echo "  install        Install world into DESTDIR=$(STAGEDIR)"
 	@echo "  iso            Build a bootable ISO"
-	@echo "  smoke-test     Boot in QEMU and verify SMOKE_TEST_RESULT=PASS"
 	@echo ""
-	@echo "Package repository targets:"
-	@echo "  repo           Build all packages from pkgs/ (needs musl-gcc)"
-	@echo "  pkg PKG=<n>    Build a single package by name"
-	@echo "  upgrade-pkg PKG=<n> [VERSION=x.y.z]"
-	@echo "                 Bump a package to latest (or given) version and build"
+	@echo "QEMU targets:"
+	@echo "  run            Boot the live CLI in QEMU (interactive; Ctrl-A X to quit)"
+	@echo "  test           Boot headless, run self-tests, assert BLUEBERRY_TEST=PASS"
 	@echo ""
 	@echo "Utility targets:"
 	@echo "  fetch          Download all upstream OS sources"

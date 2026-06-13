@@ -14,7 +14,8 @@ INITRAMDIR := $(OBJDIR)/initramfs
 
 all: $(BOOTDIR)/initramfs.cpio.zst
 
-$(BOOTDIR)/initramfs.cpio.zst: $(THISDIR)/init
+$(BOOTDIR)/initramfs.cpio.zst: $(THISDIR)/init $(THISDIR)/selftest \
+                               $(THISDIR)/profile $(THISDIR)/Makefile
 	@echo "[initramfs] assembling"
 	@rm -rf $(INITRAMDIR)
 	@mkdir -p $(INITRAMDIR)/bin $(INITRAMDIR)/sbin $(INITRAMDIR)/lib \
@@ -30,11 +31,11 @@ $(BOOTDIR)/initramfs.cpio.zst: $(THISDIR)/init
 	fi
 
 	@# Create busybox applet symlinks needed in initramfs
-	@for app in sh ash mount umount switch_root mdev blkid sleep \
+	@for app in sh ash mount umount switch_root mdev blkid sleep setsid \
 	            modprobe insmod lsmod mkdir cp mv rm ln ls cat \
-	            find grep sed awk echo printf head tail \
-	            ip udhcpc wget ping halt poweroff \
-	            uname ps free df; do \
+	            find grep sed awk echo printf head tail dmesg clear \
+	            ip udhcpc wget ping halt poweroff reboot vi more \
+	            uname ps free df hostname date cttyhack; do \
 	    ln -sf /bin/busybox $(INITRAMDIR)/bin/$$app 2>/dev/null || true; \
 	done
 	@for app in cryptsetup vgchange; do \
@@ -54,21 +55,22 @@ $(BOOTDIR)/initramfs.cpio.zst: $(THISDIR)/init
 	    [ -n "$$musl_ld" ] && cp "$$musl_ld" $(INITRAMDIR)/lib/; \
 	fi
 
-	@# Install /init
+	@# Install /init (live CLI entry point)
 	@cp $(THISDIR)/init $(INITRAMDIR)/init
 	@chmod 755 $(INITRAMDIR)/init
 
-	@# Install test-init (activated by kernel cmdline: init=/test-init)
-	@cp $(THISDIR)/test-init $(INITRAMDIR)/test-init
-	@chmod 755 $(INITRAMDIR)/test-init
+	@# Install the in-guest self-test (run via kernel cmdline: bbtest)
+	@mkdir -p $(INITRAMDIR)/etc
+	@cp $(THISDIR)/selftest $(INITRAMDIR)/etc/selftest
+	@chmod 755 $(INITRAMDIR)/etc/selftest
 
-	@# Install bpm — prefer rootfs install, fall back to build output
-	@mkdir -p $(INITRAMDIR)/usr/bin
-	@if [ -f $(STAGEDIR)/usr/bin/bpm ]; then \
-	    cp $(STAGEDIR)/usr/bin/bpm $(INITRAMDIR)/usr/bin/bpm; \
-	elif [ -f $(OBJDIR)/bpm ]; then \
-	    cp $(OBJDIR)/bpm $(INITRAMDIR)/usr/bin/bpm; \
-	fi
+	@# Install /etc/profile so the interactive shell has a nice prompt
+	@cp $(THISDIR)/profile $(INITRAMDIR)/etc/profile
+
+	@# Minimal account + hostname so \u resolves and the prompt reads root@blueberry
+	@printf 'root:x:0:0:root:/root:/bin/sh\n' > $(INITRAMDIR)/etc/passwd
+	@printf 'root:x:0:\n'                     > $(INITRAMDIR)/etc/group
+	@printf 'blueberry\n'                     > $(INITRAMDIR)/etc/hostname
 
 	@# Create device nodes
 	@mknod -m 600 $(INITRAMDIR)/dev/console  c 5 1 2>/dev/null || true

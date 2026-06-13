@@ -11,10 +11,6 @@ Make.local
 .DS_Store
 *~
 
-# Go build cache
-src/bpm/bpm
-*.test
-
-# Signing keys — never commit these
-*.key
-*.minisig
+# QEMU run artefacts
+*.qcow2
+serial.log

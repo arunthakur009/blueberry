@@ -1,14 +1,12 @@
 # Blueberry Linux
 
-A minimal, server-focused Linux distribution built from a single source tree
-in the BSD tradition.
+A minimal Linux distribution built from a single source tree in the BSD
+tradition. `git clone` → `make world` → `make run` drops you into a live CLI
+running entirely from RAM in QEMU.
 
 ```
-Linux 7.0 kernel · musl libc · busybox · runit init · bpm package manager
+Linux 7.0 kernel · musl libc · busybox · runit init
 ```
-
-[![Software](https://github.com/zsigisti/blueberry/actions/workflows/software.yml/badge.svg)](https://github.com/zsigisti/blueberry/actions/workflows/software.yml)
-[![Packages](https://github.com/zsigisti/blueberry/actions/workflows/packages.yml/badge.svg)](https://github.com/zsigisti/blueberry/actions/workflows/packages.yml)
 
 ---
 
@@ -19,19 +17,21 @@ Linux 7.0 kernel · musl libc · busybox · runit init · bpm package manager
 git clone https://github.com/mmzsigmond/blueberry.git
 cd blueberry
 
-# 2. Check prerequisites
+# 2. Check prerequisites (compiler, wget/curl, zstd, cpio, qemu)
 make _check_tools
 
-# 3. Build everything
-make world        # kernel + musl + busybox + runit + bpm + initramfs
-                  # all output goes to ../blueberry-build/ (never inside the source tree)
+# 3. Build everything: kernel + musl + busybox + runit + initramfs
+make world          # all output goes to ../blueberry-build/ (never in the tree)
 
-# 4. Install into a rootfs
-make install      # populates ../blueberry-build/rootfs/
+# 4. Boot the live CLI in QEMU (interactive — Ctrl-A X to quit)
+make run
 
-# 5. Create a bootable ISO
-make iso          # writes blueberry-YYYYMMDD-x86_64.iso
+# 5. Run the automated boot test (headless, used by CI)
+make test
 ```
+
+`make run` boots the kernel and initramfs and hands you an interactive
+busybox shell. No disk image, no install step, no network required.
 
 ---
 
@@ -41,38 +41,51 @@ make iso          # writes blueberry-YYYYMMDD-x86_64.iso
 |-----------|--------|-----|
 | C library | **musl 1.2.x** | Small, correct, static-friendly |
 | Core utilities | **busybox 1.36.x** | Single binary, 300+ applets |
-| Init | **runit 2.1.x** (default) | Supervision tree, 35 KB, no DSL |
-| Package manager | **bpm** (custom Go) | `.bb` binary packages, BFS solver |
-| Kernel | **Linux 7.0** | LTS, server profile |
+| Init | **runit 2.1.x** | Supervision tree, 35 KB, no DSL |
+| Kernel | **Linux 7.0** | Server profile, serial console, PCI |
 | Distro model | **BSD-style monorepo** | `git clone` → `make world` → bootable; build output in `../blueberry-build/` |
 
-Init freedom is a first-class feature. runit is the default; s6, OpenRC,
-and dinit are supported via the package system. systemd is not supported.
+The system boots as a **live CLI**: the kernel loads an initramfs that runs
+straight into an interactive shell. Booting a real disk install is optional —
+pass `root=<device>` on the kernel command line and `/init` will mount it and
+hand off to runit instead.
 
 ---
 
 ## Source Tree
 
 ```
-GNUmakefile         Top-level build: make world / kernel / install / iso
+GNUmakefile         Top-level build: make world / kernel / run / test / iso
 Make.config         Tunable variables (arch, versions, jobs)
 
 src/
   kernel/           Linux 7.0 config, patches, Makefile
   lib/musl/         musl libc build rules
   busybox/          busybox config + Makefile
-  init/             runit stage scripts, service dirs, Makefile
-  bpm/              Package manager (Go source)
-  initramfs/        /init script + Makefile
+  init/             runit stage scripts + service dirs (disk-boot path)
+  initramfs/        /init live-CLI script, selftest, profile, Makefile
 
-etc/                /etc skeleton (hostname, fstab, sysctl, bpm config)
-pkgs/               BBUILD package recipes
-  core/             Base system packages
-  extra/            Extended packages
-  community/        Community packages
-tools/              Host-only build scripts (mkiso, mkrepo, bootstrap)
+etc/                /etc skeleton (hostname, fstab, sysctl, accounts)
+tools/              Host-only scripts: qemu.sh (run/test), mkiso.sh
 doc/                Documentation
 ```
+
+---
+
+## How It Boots
+
+```
+QEMU ─► vmlinuz ─► initramfs /init (PID 1)
+                     │
+                     ├─ mount /proc /sys /dev, populate /dev (mdev)
+                     ├─ bbtest on cmdline?  ─► run /etc/selftest, print result, halt
+                     ├─ root= on cmdline?   ─► mount disk, switch_root to runit
+                     └─ otherwise           ─► interactive busybox login shell
+```
+
+`make run` boots with no special cmdline → you land in the live shell.
+`make test` boots with `bbtest` → the in-guest self-test prints
+`BLUEBERRY_TEST=PASS`, which the runner asserts on.
 
 ---
 
@@ -80,69 +93,13 @@ doc/                Documentation
 
 | Document | Contents |
 |----------|---------|
-| [doc/ARCHITECTURE.md](doc/ARCHITECTURE.md) | System design, boot sequence, component relationships |
+| [doc/ARCHITECTURE.md](doc/ARCHITECTURE.md) | System design, boot sequence, components |
 | [doc/BUILD.md](doc/BUILD.md) | Building the OS, prerequisites, all make targets |
 | [doc/KERNEL.md](doc/KERNEL.md) | Kernel config, customisation, patch workflow |
-| [doc/PACKAGES.md](doc/PACKAGES.md) | `.bb` format spec, BBINDEX format, database layout |
-| [doc/BBUILD.md](doc/BBUILD.md) | BBUILD recipe authoring guide and variable reference |
-| [doc/INIT.md](doc/INIT.md) | runit deep dive, service management, alternative inits |
-| [doc/BPM.md](doc/BPM.md) | bpm user guide and command reference |
-| [doc/BPM-INTERNALS.md](doc/BPM-INTERNALS.md) | bpm module architecture for contributors |
-| [doc/CONTRIBUTING.md](doc/CONTRIBUTING.md) | How to contribute packages and code |
-| [doc/CI.md](doc/CI.md) | Complete CI/CD pipeline reference (all 4 workflows) |
-| [doc/HOSTING.md](doc/HOSTING.md) | Nginx repo server, Tailscale, secrets setup |
-| [doc/SECURITY.md](doc/SECURITY.md) | Package signing, kernel hardening, SSH hardening |
-
----
-
-## Upgrading Packages
-
-```sh
-# See what has new upstream versions
-tools/check-updates.sh
-
-# Bump one package to latest and verify it builds
-make upgrade-pkg PKG=musl
-make upgrade-pkg PKG=zlib VERSION=1.3.2   # pin to a specific version
-
-# Or manually: patch BBUILD → build → commit
-tools/bump-package.sh musl --build
-git add pkgs/core/musl/BBUILD
-git commit -m "chore(pkgs): update musl 1.2.5 → 1.2.6"
-```
-
-The `auto-update.yml` CI workflow runs weekly and opens **draft PRs**
-automatically when new versions are found.
-
----
-
-## Package Manager
-
-```sh
-bpm update               # sync repo indices
-bpm install openssh      # install with dep resolution
-bpm remove openssh       # remove
-bpm upgrade              # upgrade all packages
-bpm search nginx         # search available packages
-bpm verify               # check installed file integrity
-bpm build pkgs/core/openssh/BBUILD   # build a .bb from source
-bpm repo list            # list configured repositories
-```
-
-Packages are `.bb` files — zstd-compressed tar archives — served from an
-Nginx-backed repository at `https://bb.mmzsigmond.me/`.
-
----
-
-## Contributing
-
-See [doc/CONTRIBUTING.md](doc/CONTRIBUTING.md).
-
-TL;DR:
-1. Fork on GitHub
-2. Write a `BBUILD` in `pkgs/extra/<name>/`
-3. `make bpm && ../blueberry-build/bpm build pkgs/extra/<name>/BBUILD`
-4. Open a Pull Request
+| [doc/INIT.md](doc/INIT.md) | The live-CLI init and the runit disk-boot path |
+| [doc/CI.md](doc/CI.md) | CI pipeline: build world + QEMU boot test |
+| [doc/CONTRIBUTING.md](doc/CONTRIBUTING.md) | How to contribute |
+| [doc/SECURITY.md](doc/SECURITY.md) | Kernel hardening, SSH hardening |
 
 ---
 
