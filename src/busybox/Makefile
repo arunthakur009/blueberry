@@ -18,7 +18,7 @@ MUSL_GCC := $(SYSROOT)/bin/musl-gcc
 
 all: $(STAGEDIR)/bin/busybox
 
-$(STAGEDIR)/bin/busybox: $(BUSYBOX_SRC)/Makefile
+$(STAGEDIR)/bin/busybox: $(BUSYBOX_SRC)/Makefile $(BB_CONFIG)
 	@echo "[busybox] installing config"
 	@cp $(BB_CONFIG) $(BUSYBOX_SRC)/.config
 	@echo "[busybox] building"

@@ -155,7 +155,7 @@ $(STAMP_MUSL): $(STAMP_FETCH_MUSL) $(STAMP_KERNEL_HEADERS) | $(MUSL_SYSROOT)
 # ── busybox ───────────────────────────────────────────────────────────────────
 busybox: $(STAMP_BUSYBOX)
 
-$(STAMP_BUSYBOX): $(STAMP_FETCH_BUSYBOX) $(STAMP_MUSL) | $(STAGEDIR)
+$(STAMP_BUSYBOX): $(STAMP_FETCH_BUSYBOX) $(STAMP_MUSL) $(SRCDIR)/busybox/config.full | $(STAGEDIR)
 	@echo "[build] busybox-$(BUSYBOX_VERSION)"
 	@$(MAKE) -C $(SRCDIR)/busybox \
 	    BUSYBOX_SRC=$(BUSYBOX_SRC) \
