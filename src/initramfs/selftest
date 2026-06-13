@@ -119,6 +119,24 @@ else
     bad "standalone shell (unlinked applet runs by name)"
 fi
 
+# bpm: build a tiny .pkg.tar.zst in-guest (needs the shipped zstd), install it
+# to a staging root, verify the payload + db, then remove it.
+bp=/tmp/bpwork
+rm -rf "$bp"; mkdir -p "$bp/stage/usr/bin" "$bp/root"
+printf '#!/bin/sh\necho ok\n' > "$bp/stage/usr/bin/bpmcheck"
+chmod 755 "$bp/stage/usr/bin/bpmcheck"
+printf 'pkgname = bpmcheck\npkgver = 1-1\n' > "$bp/stage/.PKGINFO"
+( cd "$bp/stage" && tar -c .PKGINFO usr | zstd -q > "$bp/p.pkg.tar.zst" ) 2>/dev/null
+if BPM_ROOT="$bp/root" bpm install "$bp/p.pkg.tar.zst" >/dev/null 2>&1 \
+   && [ -x "$bp/root/usr/bin/bpmcheck" ] \
+   && BPM_ROOT="$bp/root" bpm list 2>/dev/null | grep -q bpmcheck \
+   && BPM_ROOT="$bp/root" bpm remove bpmcheck >/dev/null 2>&1 \
+   && [ ! -e "$bp/root/usr/bin/bpmcheck" ]; then
+    ok "bpm install + remove (.pkg.tar.zst)"
+else
+    bad "bpm install/remove"
+fi
+
 printf '\n=== %d passed, %d failed ===\n' "$PASS" "$FAIL"
 if [ "$FAIL" -eq 0 ]; then
     printf 'BLUEBERRY_TEST=PASS\n'

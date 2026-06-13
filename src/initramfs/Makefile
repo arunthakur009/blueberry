@@ -16,7 +16,8 @@ all: $(BOOTDIR)/initramfs.cpio.zst
 
 $(BOOTDIR)/initramfs.cpio.zst: $(THISDIR)/init $(THISDIR)/selftest \
                                $(THISDIR)/profile $(THISDIR)/udhcpc.script \
-                               $(THISDIR)/shadow $(THISDIR)/Makefile
+                               $(THISDIR)/shadow $(THISDIR)/../bpm/bpm \
+                               $(THISDIR)/Makefile
 	@echo "[initramfs] assembling"
 	@rm -rf $(INITRAMDIR)
 	@mkdir -p $(INITRAMDIR)/bin $(INITRAMDIR)/sbin $(INITRAMDIR)/lib \
@@ -68,6 +69,16 @@ $(BOOTDIR)/initramfs.cpio.zst: $(THISDIR)/init $(THISDIR)/selftest \
 	@cp $(THISDIR)/udhcpc.script $(INITRAMDIR)/etc/udhcpc.script
 	@chmod 755 $(INITRAMDIR)/etc/udhcpc.script
 
+	@# bpm package manager + default repo config
+	@mkdir -p $(INITRAMDIR)/usr/bin $(INITRAMDIR)/etc/bpm
+	@cp $(THISDIR)/../bpm/bpm $(INITRAMDIR)/usr/bin/bpm
+	@chmod 755 $(INITRAMDIR)/usr/bin/bpm
+	@cp $(THISDIR)/../../etc/bpm/repos.conf $(INITRAMDIR)/etc/bpm/repos.conf
+
+	@# zstd binary — bpm needs it to read .pkg.tar.zst (busybox has no zstd).
+	@# Its libs (libzstd/liblz4/liblzma/libz) are picked up by bundle-glibc.
+	@cp $$(command -v zstd) $(INITRAMDIR)/usr/bin/zstd
+
 	@# Minimal account + hostname so \u resolves and the prompt reads root@blueberry
 	@printf 'root:x:0:0:root:/root:/bin/sh\n' > $(INITRAMDIR)/etc/passwd
 	@printf 'root:x:0:\n'                     > $(INITRAMDIR)/etc/group
@@ -104,7 +115,8 @@ $(BOOTDIR)/initramfs.cpio.zst: $(THISDIR)/init $(THISDIR)/selftest \
 	@echo "[initramfs] bundling glibc runtime"
 	@bash $(THISDIR)/../../tools/bundle-glibc.sh $(INITRAMDIR) \
 	    $(INITRAMDIR)/bin/busybox \
-	    $(INITRAMDIR)/usr/sbin/dropbearmulti
+	    $(INITRAMDIR)/usr/sbin/dropbearmulti \
+	    $(INITRAMDIR)/usr/bin/zstd
 
 	@# Pack as CPIO
 	@echo "[initramfs] packing"

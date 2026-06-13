@@ -218,12 +218,16 @@ _do_install:
 	@chmod 711  $(STAGEDIR)/var/empty
 	@# /init → runit-init
 	@ln -sf /sbin/runit-init $(STAGEDIR)/init 2>/dev/null || true
+	@# bpm package manager + zstd (bpm needs zstd to read .pkg.tar.zst)
+	@install -Dm755 $(SRCDIR)/bpm/bpm $(STAGEDIR)/usr/bin/bpm
+	@install -Dm755 $$(command -v zstd) $(STAGEDIR)/usr/bin/zstd
 	@# Bundle the glibc runtime into the rootfs (disk-boot path + external
 	@# prebuilt glibc software).
 	@bash $(TOPDIR)/tools/bundle-glibc.sh $(STAGEDIR) \
 	    $(STAGEDIR)/bin/busybox \
 	    $(STAGEDIR)/sbin/runit-init \
-	    $(STAGEDIR)/usr/sbin/dropbearmulti
+	    $(STAGEDIR)/usr/sbin/dropbearmulti \
+	    $(STAGEDIR)/usr/bin/zstd
 	@# Copy boot assets (kernel + initramfs) into rootfs/boot for mkiso.sh
 	@cp $(BOOTDIR)/vmlinuz              $(STAGEDIR)/boot/vmlinuz
 	@cp $(BOOTDIR)/initramfs.cpio.zst   $(STAGEDIR)/boot/initramfs.cpio.zst
