@@ -1,0 +1,10 @@
+# Packages the Blueberry base system already provides.
+# When bpm resolves dependencies (e.g. from the official Arch repos), any dep
+# named here is treated as satisfied and is NOT downloaded/installed — this
+# keeps Arch packages from trying to reinstall glibc, bash, coreutils, etc.
+# over the base system. One package name per line; #comments and blanks ignored.
+#
+# A built-in list lives in `is_provided` inside the bpm script; this file EXTENDS
+# it. Add anything else your image bundles (e.g. ncurses, zlib if you ship them).
+ncurses
+zlib

@@ -53,6 +53,20 @@ installed_version() {  # echo version if installed, else nothing
     [ -f "$DB/$1/desc" ] && field pkgver < "$DB/$1/desc"
 }
 
+# Packages the base system already provides (busybox/glibc/runit/dropbear, plus
+# things that must never be overwritten). Dependencies on these are skipped, so
+# installing from Arch repos doesn't try to reinstall the base over itself.
+# Extend via $BPM_ROOT/etc/bpm/provided (one name per line).
+PROVIDED_FILE="$BPM_ROOT/etc/bpm/provided"
+is_provided() {
+    case " glibc gcc-libs bash sh dash filesystem busybox coreutils util-linux \
+           findutils grep sed gawk awk gzip procps-ng iproute2 iputils \
+           dropbear ld-linux glibc-locales tzdata " in
+        *" $1 "*) return 0 ;;
+    esac
+    [ -f "$PROVIDED_FILE" ] && grep -qxF "$1" "$PROVIDED_FILE"
+}
+
 # Strip a dependency atom of any version constraint / provider syntax:
 #   "glibc>=2.38" -> "glibc",  "libfoo.so=1-64" -> "libfoo.so"
 dep_name() { printf '%s\n' "$1" | sed 's/[<>=].*//'; }
@@ -129,6 +143,30 @@ repo_mirrors() {
     [ -f "$CONF" ] && awk -v r="$1" '$1==r{$1="";sub(/^[ \t]+/,"");print;exit}' "$CONF"
 }
 
+# Convert a pacman database (<repo>.db, a gzip tar of <pkg>/desc files) to our
+# index format. Lets bpm consume official Arch mirrors directly: the packages
+# live next to the .db, so fetch_pkg's "<mirror>/<filename>" works unchanged.
+pacman_db_to_index() {
+    local db="$1" repo="$2" d desc
+    d=$(mktemp -d)
+    { zcat "$db" 2>/dev/null || cat "$db"; } | tar -x -C "$d" -f - 2>/dev/null || {
+        rm -rf "$d"; return 1; }
+    for desc in "$d"/*/desc; do
+        [ -f "$desc" ] || continue
+        awk -v repo="$repo" '
+            /^%.*%$/ { key=$0; next }
+            /^$/     { key="";  next }
+            key=="%FILENAME%"  { fn=$0 }
+            key=="%NAME%"      { nm=$0 }
+            key=="%VERSION%"   { ver=$0 }
+            key=="%SHA256SUM%" { sha=$0 }
+            key=="%DEPENDS%"   { deps=deps (deps?",":"") $0 }
+            END { if (nm) printf "%s|%s|%s|%s|%s|%s\n", nm,ver,fn,sha,deps,repo }
+        ' "$desc"
+    done
+    rm -rf "$d"
+}
+
 cmd_update() {
     [ -f "$CONF" ] || die "no repo config: $CONF"
     command -v wget >/dev/null 2>&1 || die "wget required for 'update'"
@@ -141,14 +179,17 @@ cmd_update() {
         for url in $urls; do
             log "syncing '$rname' from $url"
             if wget -q -O "$INDEX.repo" "$url/bpm.index"; then
-                sed "s#\$#|$rname#" "$INDEX.repo" >> "$INDEX.tmp"
+                sed "s#\$#|$rname#" "$INDEX.repo" >> "$INDEX.tmp"   # native bpm.index
+                got=1; break
+            elif wget -q -O "$INDEX.db" "$url/$rname.db"; then
+                pacman_db_to_index "$INDEX.db" "$rname" >> "$INDEX.tmp"  # Arch repo
                 got=1; break
             fi
             warn "mirror unreachable: $url"
         done
         [ -n "$got" ] || warn "all mirrors failed for repo '$rname'"
     done < "$CONF"
-    rm -f "$INDEX.repo"
+    rm -f "$INDEX.repo" "$INDEX.db"
     mv "$INDEX.tmp" "$INDEX"
     log "$(wc -l < "$INDEX" 2>/dev/null || echo 0) packages in index"
 }
@@ -186,6 +227,7 @@ install_name() {
     name="$1"
     seen "$name" && return 0
     mark "$name"
+    is_provided "$name" && return 0
     [ -n "$(installed_version "$name" || true)" ] && { log "$name already installed"; return 0; }
 
     line=$(index_line "$name")
