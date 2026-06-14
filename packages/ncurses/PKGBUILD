@@ -16,7 +16,7 @@ build() {
     --prefix=/usr \
     --mandir=/usr/share/man \
     --with-shared \
-    --with-cxx-shared \
+    --without-cxx-binding \
     --enable-widec \
     --enable-pc-files \
     --with-pkg-config-libdir=/usr/lib/pkgconfig \
