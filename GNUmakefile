@@ -227,6 +227,10 @@ _do_install:
 	    OBJDIR=$(OBJDIR)/bpm BPM_OUT=$(OBJDIR)/bpm/bpm
 	@install -Dm755 $(OBJDIR)/bpm/bpm $(STAGEDIR)/usr/bin/bpm
 	@install -Dm755 $$(command -v zstd) $(STAGEDIR)/usr/bin/zstd
+	@# CA trust store so bpm can verify HTTPS repos (TLS via BearSSL).
+	@install -Dm644 $$(readlink -f /etc/ssl/certs/ca-certificates.crt) \
+	    $(STAGEDIR)/etc/ssl/certs/ca-certificates.crt 2>/dev/null \
+	    || echo "WARNING: host CA bundle not found; HTTPS repos won't verify"
 	@# Bundle the glibc runtime into the rootfs (disk-boot path + external
 	@# prebuilt glibc software). bpm links libzstd, so include it too.
 	@bash $(TOPDIR)/tools/bundle-glibc.sh $(STAGEDIR) \

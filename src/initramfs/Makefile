@@ -80,6 +80,11 @@ $(BOOTDIR)/initramfs.cpio.zst: $(THISDIR)/init $(THISDIR)/selftest \
 	@cp $(THISDIR)/../../etc/bpm/repos.conf $(INITRAMDIR)/etc/bpm/repos.conf
 	@cp $(THISDIR)/../../etc/bpm/provided  $(INITRAMDIR)/etc/bpm/provided
 
+	@# CA trust store so bpm can verify HTTPS repos (TLS via BearSSL).
+	@mkdir -p $(INITRAMDIR)/etc/ssl/certs
+	@cp -L /etc/ssl/certs/ca-certificates.crt $(INITRAMDIR)/etc/ssl/certs/ca-certificates.crt 2>/dev/null \
+	    || echo "WARNING: host CA bundle not found; HTTPS repos won't verify"
+
 	@# zstd binary — handy on the live system; its libs (libzstd/liblz4/liblzma/
 	@# libz) also satisfy the C bpm, which links libzstd. Picked up by bundle-glibc.
 	@cp $$(command -v zstd) $(INITRAMDIR)/usr/bin/zstd

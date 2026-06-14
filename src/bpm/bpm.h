@@ -30,6 +30,7 @@ extern char *g_index;  /* <root>/var/lib/bpm/index */
 extern char *g_conf;   /* <root>/etc/bpm/repos.conf */
 extern char *g_prov;   /* <root>/etc/bpm/provided */
 extern char *g_dest;   /* filesystem root to extract into ("/" when g_root="") */
+extern char *g_cafile; /* <root>/etc/ssl/certs/ca-certificates.crt (TLS roots) */
 
 void paths_init(void);
 
@@ -83,9 +84,21 @@ int tar_iterate(const char *buf, size_t len,
                 int (*cb)(const TarEntry *, void *), void *ctx);
 
 /* ── net.c ──────────────────────────────────────────────────────────────── */
-/* HTTP GET <url> into <outpath>. Follows a few redirects. http:// only.
- * Returns 0 on 2xx + saved file, -1 otherwise. Quiet on failure. */
+/* HTTP(S) GET <url> into <outpath>. Follows a few redirects. http:// and
+ * https:// (the latter via tls.c/BearSSL). 0 on 2xx + saved file, else -1. */
 int http_get(const char *url, const char *outpath);
+/* Connect a blocking TCP socket, IPv4-first, with a per-address timeout so a
+ * dead (e.g. broken-IPv6) address fails fast instead of stalling. -1 on error. */
+int tcp_connect(const char *host, const char *port);
+
+/* ── tls.c (BearSSL) ────────────────────────────────────────────────────── */
+/* Open a verified TLS connection (SNI=host, validated against g_cafile).
+ * Returns an opaque handle or NULL. read/write/close mirror socket semantics:
+ * tls_read returns bytes (0=EOF, <0 err); tls_write returns 0 ok / -1. */
+void *tls_open(const char *host, const char *port);
+int   tls_read(void *ctx, void *buf, size_t n);
+int   tls_write(void *ctx, const void *buf, size_t n);
+void  tls_close(void *ctx);
 
 /* ── pkginfo.c ──────────────────────────────────────────────────────────── */
 /* Extract a field value from .PKGINFO text ("key = value" lines). Returns

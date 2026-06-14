@@ -5,7 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-char *g_root, *g_db, *g_cache, *g_index, *g_conf, *g_prov, *g_dest;
+char *g_root, *g_db, *g_cache, *g_index, *g_conf, *g_prov, *g_dest, *g_cafile;
 
 void paths_init(void) {
     const char *env = getenv("BPM_ROOT");
@@ -22,6 +22,7 @@ void paths_init(void) {
     g_index = xasprintf("%s/var/lib/bpm/index", g_root);
     g_conf  = xasprintf("%s/etc/bpm/repos.conf", g_root);
     g_prov  = xasprintf("%s/etc/bpm/provided", g_root);
+    g_cafile = xasprintf("%s/etc/ssl/certs/ca-certificates.crt", g_root);
 }
 
 static void usage(void) {
