@@ -37,6 +37,7 @@ int cmd_update(int argc, char **argv) {
 
     Buf idx; buf_init(&idx);
     char *tmp = xasprintf("%s.repo", g_index);
+    char *sigtmp = xasprintf("%s.sig", g_index);
 
     FILE *f = fopen(g_conf, "r");
     if (!f) die("cannot read %s", g_conf);
@@ -56,25 +57,44 @@ int cmd_update(int argc, char **argv) {
             int rc = http_get(u, tmp);
             free(u);
             if (rc != 0) { warn("mirror unreachable: %s", url); continue; }
-            /* append each line with the repo as the 6th field */
+
             size_t rl; char *body = read_file(tmp, &rl);
-            if (body) {
-                char *bsv = NULL;
-                for (char *p = strtok_r(body, "\n", &bsv); p; p = strtok_r(NULL, "\n", &bsv)) {
-                    if (!*p) continue;
-                    buf_append(&idx, p, strlen(p));
-                    buf_putc(&idx, '|');
-                    buf_append(&idx, repo, strlen(repo));
-                    buf_putc(&idx, '\n');
+            if (!body) { warn("empty index from %s", url); continue; }
+
+            /* Verify the detached ECDSA signature over the raw index bytes
+             * (before we append the repo column). The sig sits next to the
+             * index as bpm.index.sig. */
+            if (sig_required()) {
+                char *su = xasprintf("%s/bpm.index.sig", url);
+                int src = http_get(su, sigtmp);
+                free(su);
+                size_t sl = 0; char *sig = src == 0 ? read_file(sigtmp, &sl) : NULL;
+                int ok = sig && sig_verify_index(body, rl, sig, sl);
+                free(sig);
+                if (!ok) {
+                    warn("signature verification FAILED for '%s' from %s", repo, url);
+                    free(body);
+                    continue;   /* try next mirror; never trust an unsigned index */
                 }
-                free(body);
             }
+
+            /* append each line with the repo as the 6th field */
+            char *bsv = NULL;
+            for (char *p = strtok_r(body, "\n", &bsv); p; p = strtok_r(NULL, "\n", &bsv)) {
+                if (!*p) continue;
+                buf_append(&idx, p, strlen(p));
+                buf_putc(&idx, '|');
+                buf_append(&idx, repo, strlen(repo));
+                buf_putc(&idx, '\n');
+            }
+            free(body);
             got = 1; break;
         }
         if (!got) warn("all mirrors failed for repo '%s'", repo);
     }
     free(line); fclose(f);
     unlink(tmp); free(tmp);
+    unlink(sigtmp); free(sigtmp);
 
     /* atomic swap */
     char *itmp = xasprintf("%s.tmp", g_index);

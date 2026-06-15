@@ -98,6 +98,11 @@ void sha256_hex(const void *data, size_t len, char out[65]) {
     hex(d, out);
 }
 
+void sha256_raw(const void *data, size_t len, unsigned char out[32]) {
+    Sha256 s;
+    sha_init(&s); sha_update(&s, data, len); sha_final(&s, out);
+}
+
 int sha256_file_hex(const char *path, char out[65]) {
     FILE *f = fopen(path, "rb");
     if (!f) return -1;

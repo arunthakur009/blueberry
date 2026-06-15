@@ -20,7 +20,7 @@ BEARINC := -I$(BEAR)/inc -I$(BEAR)/src
 OBJDIR  ?= $(THISDIR).obj
 BPM_OUT ?= $(OBJDIR)/bpm
 
-SRCS := main.c util.c sha256.c archive.c net.c tls.c pkginfo.c repo.c db.c install.c cmd.c
+SRCS := main.c util.c sha256.c archive.c net.c tls.c sig.c pkginfo.c repo.c db.c install.c cmd.c
 OBJS := $(addprefix $(OBJDIR)/,$(SRCS:.c=.o))
 
 BEARSRCS := $(shell find $(BEAR)/src -name '*.c')

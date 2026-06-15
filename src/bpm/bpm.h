@@ -60,7 +60,17 @@ void  buf_free(Buf *b);
 /* ── sha256.c ───────────────────────────────────────────────────────────── */
 /* Lowercase hex digest (64 chars + NUL) into out[65]. */
 void sha256_hex(const void *data, size_t len, char out[65]);
+void sha256_raw(const void *data, size_t len, unsigned char out[32]);
 int  sha256_file_hex(const char *path, char out[65]); /* 0 ok, -1 on read err */
+
+/* ── sig.c (BearSSL ECDSA P-256 index signing) ──────────────────────────── */
+/* Verify a detached ECDSA-P256/SHA-256 signature (DER/asn1) over the bytes
+ * in <data> against the baked-in repo public key. 1 = valid, 0 = invalid. */
+int sig_verify_index(const void *data, size_t len,
+                     const void *sig, size_t siglen);
+/* Whether signature checking is enforced. Off if BPM_ALLOW_UNSIGNED is set in
+ * the environment (dev/testing escape hatch). */
+int sig_required(void);
 
 /* ── archive.c ──────────────────────────────────────────────────────────── */
 /* Decompress a .zst file fully into memory. Returns malloc'd buffer, sets
