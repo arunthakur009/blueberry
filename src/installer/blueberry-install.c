@@ -174,6 +174,39 @@ static const char *find_payload(void) {
     return NULL;
 }
 
+/* Optionally install extra packages into the freshly-laid-down target via bpm.
+ * Package list comes from BLUEBERRY_PKGS (space-separated) for unattended
+ * installs, or an interactive prompt otherwise. Best-effort: a failure here
+ * never aborts an otherwise-successful base install. */
+static void install_packages(const char *target) {
+    char buf[512] = "";
+    const char *env_pkgs = getenv("BLUEBERRY_PKGS");
+    if (env_pkgs && *env_pkgs) {
+        snprintf(buf, sizeof buf, "%s", env_pkgs);
+    } else if (!getenv("BLUEBERRY_YES")) {
+        snprintf(buf, sizeof buf, "%s",
+                 prompt("\nExtra packages to install now (space-separated, blank to skip)\n"
+                        "  e.g. vim git sudo nano  > "));
+    }
+    /* strip leading whitespace; skip if empty */
+    char *p = buf; while (*p == ' ' || *p == '\t') p++;
+    if (!*p) return;
+
+    step("installing extra packages: %s", p);
+    /* The live shell usually already has networking; if not, best-effort DHCP. */
+    run("ip route 2>/dev/null | grep -q default || "
+        "{ for i in /sys/class/net/*; do n=$(basename \"$i\"); [ \"$n\" = lo ] && continue; "
+        "ip link set \"$n\" up 2>/dev/null; udhcpc -b -i \"$n\" -t 3 -T 2 2>/dev/null; done; sleep 1; }");
+    if (run("BPM_ROOT=%s bpm update", target) != 0) {
+        fprintf(stderr, "[install] WARNING: 'bpm update' failed (no network/repo?); "
+                        "skipping extra packages\n");
+        return;
+    }
+    if (run("BPM_ROOT=%s bpm install %s", target, p) != 0)
+        fprintf(stderr, "[install] WARNING: some packages failed to install "
+                        "(the base system is still fine)\n");
+}
+
 int main(void) {
     if (geteuid() != 0) die("must run as root");
     /* the bundled tools live in /usr/{bin,sbin} with libs in /usr/lib, which
@@ -263,6 +296,8 @@ int main(void) {
         while (run("chroot /mnt/blueberry /usr/bin/passwd root") != 0)
             printf("   passwords didn't match; try again\n");
     }
+
+    install_packages("/mnt/blueberry");
 
     step("unmounting");
     run("umount /mnt/blueberry/boot");
