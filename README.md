@@ -5,8 +5,12 @@ tradition. `git clone` → `make world` → `make run` drops you into a live CLI
 running entirely from RAM in QEMU.
 
 ```
-Linux 7.0 kernel · glibc · busybox · runit init · Dropbear SSH
+Linux 7.0 kernel · glibc · busybox · bash · runit init · Dropbear SSH · bpm packages
 ```
+
+It ships a native package manager (`bpm`) that installs from a **signed**
+repository, a guided disk **installer** (`blueberry-install`), and a growing
+package set including the GNU **toolchain** (gcc, binutils, git, make).
 
 ---
 
@@ -40,9 +44,12 @@ busybox shell. No disk image, no install step, no network required.
 | Component | Choice | Why |
 |-----------|--------|-----|
 | C library | **glibc** (host) | Binary compatibility — runs prebuilt glibc software |
-| Core utilities | **busybox 1.36.x** | Single binary, 300+ applets, standalone shell |
+| Core utilities | **busybox 1.36.x** | Single binary, 300+ applets, standalone shell (`/bin/sh`) |
+| Login shell | **bash 5.2** | Default interactive shell on installed systems |
 | Init | **runit 2.1.x** | Supervision tree, 35 KB, no DSL |
 | SSH | **Dropbear 2024.x** | Tiny static SSH server + client |
+| Packages | **bpm** | Native package manager; installs from a signed repo (`.pkg.tar.zst`) |
+| Installer | **blueberry-install** | Guided GPT/UEFI install: partition, format, GRUB, root password |
 | Kernel | **Linux 7.0** | Server profile: SATA/NVMe/USB, NICs, UEFI, serial console |
 | Distro model | **BSD-style monorepo** | `git clone` → `make world` → bootable; build output in `../blueberry-build/` |
 
@@ -55,6 +62,23 @@ mount it and hand off to runit instead.
 Log in over SSH as `root` (default password `blueberry` — change it for real
 deployments). Deploy to bare metal with `make iso` or `make disk`; see
 [doc/DEPLOY.md](doc/DEPLOY.md).
+
+### Installing to disk
+
+The ISO carries a guided installer. Boot it and run `blueberry-install`: it
+partitions the target (GPT: EFI + root), formats (FAT + ext4), extracts the
+root filesystem, installs GRUB (UEFI), writes `fstab`, and sets the root
+password. The installed system boots GRUB → kernel → runit, with **bash** as
+the login shell. Unattended installs are supported via the `bbinstall` kernel
+cmdline (used by the QEMU end-to-end test).
+
+### Packages
+
+`bpm update && bpm install <pkg>` pulls from the configured repo
+(`/etc/bpm/repos.conf`). The repo index is signed (ECDSA P-256, verified by a
+key baked into `bpm`); package files are anchored by SHA-256 in that signed
+index. Recipes live in [packages/](packages/); host the repo yourself with
+`tools/mkrepo.sh` or the `blueberry-repo-sync` service (see [doc/BPM.md](doc/BPM.md)).
 
 ---
 
@@ -70,9 +94,13 @@ src/
   init/             runit stage scripts + service dirs (disk-boot path)
   dropbear/         Dropbear SSH build rules
   initramfs/        /init live-CLI script, selftest, profile, udhcpc, Makefile
+  bpm/              Native package manager (C; vendored BearSSL for TLS + signing)
+  installer/        blueberry-install — guided GPT/UEFI disk installer (C)
 
-etc/                /etc skeleton (hostname, fstab, sysctl, accounts)
-tools/              Host-only scripts: qemu.sh (run/test), mkiso.sh
+packages/           bpm package recipes (PKGBUILD format)
+etc/                /etc skeleton (hostname, fstab, sysctl, accounts, bpm config)
+tools/              Host-only scripts: qemu.sh, mkiso.sh, mkdisk.sh,
+                    build-pkgs.sh, mkrepo.sh (repo index + signing), mkrepokey.sh
 doc/                Documentation
 ```
 
@@ -84,9 +112,10 @@ doc/                Documentation
 QEMU ─► vmlinuz ─► initramfs /init (PID 1)
                      │
                      ├─ mount /proc /sys /dev, populate /dev (mdev)
-                     ├─ bbtest on cmdline?  ─► run /etc/selftest, print result, halt
-                     ├─ root= on cmdline?   ─► mount disk, switch_root to runit
-                     └─ otherwise           ─► interactive busybox login shell
+                     ├─ bbtest on cmdline?    ─► run /etc/selftest, print result, halt
+                     ├─ bbinstall on cmdline? ─► run blueberry-install unattended, halt
+                     ├─ root= on cmdline?     ─► resolve UUID, mount disk, switch_root to runit
+                     └─ otherwise             ─► interactive login shell
 ```
 
 `make run` boots with no special cmdline → you land in the live shell.
