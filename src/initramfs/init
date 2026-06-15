@@ -121,7 +121,12 @@ if [ -n "$BBINSTALL" ]; then
     BLUEBERRY_ROOTPW=$(cmdline blueberry.rootpw); : "${BLUEBERRY_ROOTPW:=blueberry}"
     # cmdline can't carry spaces, so packages are comma-separated -> spaces.
     BLUEBERRY_PKGS=$(cmdline blueberry.pkgs | tr ',' ' ')
+    BLUEBERRY_HOSTNAME=$(cmdline blueberry.hostname)
+    BLUEBERRY_SWAP=$(cmdline blueberry.swap)
+    BLUEBERRY_USER=$(cmdline blueberry.user)
+    BLUEBERRY_USERPW=$(cmdline blueberry.userpw)
     export BLUEBERRY_TARGET BLUEBERRY_ROOTPW BLUEBERRY_PKGS BLUEBERRY_YES=1
+    export BLUEBERRY_HOSTNAME BLUEBERRY_SWAP BLUEBERRY_USER BLUEBERRY_USERPW
     blueberry-install; rc=$?
     echo "BLUEBERRY_INSTALL_EXIT=$rc"
     [ "$rc" = 0 ] && echo "BLUEBERRY_INSTALL=OK" || echo "BLUEBERRY_INSTALL=FAIL"

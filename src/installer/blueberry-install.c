@@ -174,6 +174,73 @@ static const char *find_payload(void) {
     return NULL;
 }
 
+/* Set the system hostname on the target (BLUEBERRY_HOSTNAME or a prompt). */
+static void set_hostname(void) {
+    char host[128] = "";
+    const char *env = getenv("BLUEBERRY_HOSTNAME");
+    if (env && *env) snprintf(host, sizeof host, "%s", env);
+    else if (!getenv("BLUEBERRY_YES"))
+        snprintf(host, sizeof host, "%s",
+                 prompt("\nHostname for the new system [blueberry]: "));
+    char *h = host; while (*h == ' ') h++;
+    if (!*h) h = "blueberry";
+    step("hostname: %s", h);
+    FILE *f = fopen("/mnt/blueberry/etc/hostname", "w");
+    if (f) { fprintf(f, "%s\n", h); fclose(f); }
+}
+
+/* Optionally create a swapfile of N GiB on the target and add it to fstab. */
+static void make_swap(void) {
+    char ans[64] = "";
+    const char *env = getenv("BLUEBERRY_SWAP");
+    if (env) snprintf(ans, sizeof ans, "%s", env);
+    else if (!getenv("BLUEBERRY_YES"))
+        snprintf(ans, sizeof ans, "%s",
+                 prompt("\nSwapfile size in GiB (0 or blank to skip): "));
+    int gib = atoi(ans);
+    if (gib <= 0) return;
+    step("creating %d GiB swapfile", gib);
+    /* fallocate can leave holes that swapon rejects; dd guarantees real blocks
+     * but is slow — use fallocate then fall back to dd if swapon complains. */
+    if (run("fallocate -l %dG /mnt/blueberry/swapfile 2>/dev/null"
+            " || dd if=/dev/zero of=/mnt/blueberry/swapfile bs=1M count=%d 2>/dev/null",
+            gib, gib * 1024) != 0) {
+        fprintf(stderr, "[install] WARNING: could not allocate swapfile; skipping\n");
+        return;
+    }
+    run("chmod 600 /mnt/blueberry/swapfile");
+    run("mkswap /mnt/blueberry/swapfile >/dev/null 2>&1");
+    FILE *fs = fopen("/mnt/blueberry/etc/fstab", "a");
+    if (fs) { fprintf(fs, "/swapfile  none  swap  sw  0 0\n"); fclose(fs); }
+}
+
+/* Optionally create a non-root user with a bash login shell. */
+static void make_user(void) {
+    char name[64] = "";
+    const char *env = getenv("BLUEBERRY_USER");
+    if (env && *env) snprintf(name, sizeof name, "%s", env);
+    else if (!getenv("BLUEBERRY_YES"))
+        snprintf(name, sizeof name, "%s",
+                 prompt("\nCreate a non-root user (blank to skip): "));
+    char *u = name; while (*u == ' ') u++;
+    if (!*u) return;
+    step("creating user %s", u);
+    /* shadow's useradd if present, else busybox adduser */
+    if (run("chroot /mnt/blueberry /usr/sbin/useradd -m -s /bin/bash %s 2>/dev/null"
+            " || chroot /mnt/blueberry adduser -D -s /bin/bash %s", u, u) != 0) {
+        fprintf(stderr, "[install] WARNING: could not create user %s\n", u);
+        return;
+    }
+    const char *pw = getenv("BLUEBERRY_USERPW");
+    if (pw && *pw) {
+        run("printf '%s:%s\\n' | chroot /mnt/blueberry /usr/sbin/chpasswd 2>/dev/null"
+            " || printf '%s:%s\\n' | chroot /mnt/blueberry chpasswd", u, pw, u, pw);
+    } else if (!getenv("BLUEBERRY_YES")) {
+        while (run("chroot /mnt/blueberry /usr/bin/passwd %s", u) != 0)
+            printf("   passwords didn't match; try again\n");
+    }
+}
+
 /* Optionally install extra packages into the freshly-laid-down target via bpm.
  * Package list comes from BLUEBERRY_PKGS (space-separated) for unattended
  * installs, or an interactive prompt otherwise. Best-effort: a failure here
@@ -297,9 +364,13 @@ int main(void) {
             printf("   passwords didn't match; try again\n");
     }
 
+    set_hostname();
+    make_swap();
+    make_user();
     install_packages("/mnt/blueberry");
 
     step("unmounting");
+    run("swapoff /mnt/blueberry/swapfile 2>/dev/null");
     run("umount /mnt/blueberry/boot");
     run("umount /mnt/blueberry");
 
