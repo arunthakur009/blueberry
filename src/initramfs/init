@@ -64,16 +64,18 @@ setup_network() {
     # their interface yet; wait briefly for at least one Ethernet device.
     _n=0
     while [ $_n -lt 10 ]; do
-        for iface in $(ls /sys/class/net 2>/dev/null); do
+        for _p in /sys/class/net/*; do
+            iface=${_p##*/}
             [ "$iface" = lo ] && continue
-            [ "$(cat /sys/class/net/$iface/type 2>/dev/null)" = "1" ] && _n=99 && break
+            [ "$(cat "$_p/type" 2>/dev/null)" = "1" ] && _n=99 && break
         done
         [ $_n -eq 99 ] && break
         sleep 0.3; _n=$((_n + 1))
     done
-    for iface in $(ls /sys/class/net 2>/dev/null); do
+    for _p in /sys/class/net/*; do
+        iface=${_p##*/}
         [ "$iface" = lo ] && continue
-        [ "$(cat /sys/class/net/$iface/type 2>/dev/null)" = "1" ] || continue
+        [ "$(cat "$_p/type" 2>/dev/null)" = "1" ] || continue
         ip link set "$iface" up 2>/dev/null
         udhcpc -b -i "$iface" -s /etc/udhcpc.script -t 4 -T 1 2>/dev/null &
     done

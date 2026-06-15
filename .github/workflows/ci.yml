@@ -1,9 +1,12 @@
 # .github/workflows/ci.yml — build Blueberry and boot-test it in QEMU
 #
-# Builds the full OS (kernel + musl + busybox + runit + initramfs) and then
-# boots it headless in QEMU, asserting the in-guest self-test prints
+# Builds the full OS (kernel + glibc runtime + busybox + runit + initramfs) and
+# then boots it headless in QEMU, asserting the in-guest self-test prints
 # BLUEBERRY_TEST=PASS. GitHub runners have no /dev/kvm, so qemu.sh runs under
 # TCG automatically — slower, but correct.
+#
+# Fast static checks (shellcheck, PKGBUILD validation, bpm/installer compile)
+# live in checks.yml and gate every push without needing the full build.
 
 name: CI
 

@@ -61,7 +61,8 @@ grep_check "hostname"  blueberry  hostname
 net_ok=""
 i=0
 while [ $i -lt 16 ]; do
-    for iface in $(ls /sys/class/net 2>/dev/null); do
+    for _p in /sys/class/net/*; do
+        iface=${_p##*/}
         [ "$iface" = lo ] && continue
         if ip -4 addr show "$iface" 2>/dev/null | grep -q 'inet '; then
             net_ok="$iface"; break

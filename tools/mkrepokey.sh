@@ -10,7 +10,7 @@
 
 set -eu
 KEY="${1:-$HOME/.config/bpm/repo-signing-key.pem}"
-HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+HERE=$(unset CDPATH; cd -- "$(dirname -- "$0")" && pwd)
 OUT="$HERE/../src/bpm/repokey.h"
 
 command -v openssl >/dev/null 2>&1 || { echo "mkrepokey: need openssl" >&2; exit 1; }

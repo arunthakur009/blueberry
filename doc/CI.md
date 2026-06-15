@@ -1,8 +1,20 @@
 # CI/CD
 
-Blueberry has a single CI workflow: **`.github/workflows/ci.yml`**.
+Blueberry has two GitHub workflows:
 
-## What it does
+- **`.github/workflows/checks.yml`** — fast static checks (seconds), gating
+  every push. It deliberately does **not** build the package set (no `makepkg`,
+  no Arch container — that's the repo server's job). Jobs:
+  - **shellcheck** — lints every shell script (`tools/*.sh`, the initramfs
+    `init`/`selftest`).
+  - **pkgbuilds** — `tools/check-pkgbuilds.sh` statically validates every
+    `packages/*/PKGBUILD` (required fields, `source`↔`sha256sums` length,
+    real 64-hex checksums — no `SKIP`).
+  - **bpm** — compiles the package manager with `-Werror` and smoke-tests it.
+  - **installer** — compiles `blueberry-install` with `-Werror`.
+- **`.github/workflows/ci.yml`** — the full build + QEMU boot test (below).
+
+## What ci.yml does
 
 On every push, pull request, and manual dispatch it:
 
