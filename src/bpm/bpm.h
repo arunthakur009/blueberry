@@ -61,6 +61,10 @@ void  buf_free(Buf *b);
 /* Lowercase hex digest (64 chars + NUL) into out[65]. */
 void sha256_hex(const void *data, size_t len, char out[65]);
 void sha256_raw(const void *data, size_t len, unsigned char out[32]);
+
+/* ── vercmp.c ───────────────────────────────────────────────────────────── */
+/* Compare [epoch:]ver[-rel] versions. <0 a<b, 0 equal, >0 a>b. */
+int vercmp(const char *a, const char *b);
 int  sha256_file_hex(const char *path, char out[65]); /* 0 ok, -1 on read err */
 
 /* ── sig.c (BearSSL ECDSA P-256 index signing) ──────────────────────────── */
@@ -144,6 +148,7 @@ int   db_record(const char *name, const char *info, char **files, int nfiles);
 int  is_provided(const char *name);
 void install_file(const char *path);       /* local .pkg.tar.zst */
 void install_name(const char *name);       /* resolve from repos, recursive */
+void install_name_explicit(const char *name); /* user-requested: ignore is_provided */
 void seen_reset(void);
 
 /* ── commands (cmd.c) ───────────────────────────────────────────────────── */

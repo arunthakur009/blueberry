@@ -157,10 +157,13 @@ static void mark(const char *name) {
     g_seen[g_seen_n++] = xstrdup(name);
 }
 
-void install_name(const char *name) {
+/* explicit: the user named this package on the command line, so install it even
+ * if it's in the "provided" set (e.g. `bpm install glibc` for the dev SDK).
+ * Transitive deps recurse with explicit=0 and still honour is_provided. */
+static void install_name_impl(const char *name, int explicit) {
     if (seen(name)) return;
     mark(name);
-    if (is_provided(name)) return;
+    if (!explicit && is_provided(name)) return;
 
     char *iv = db_installed_version(name);
     if (iv) { logmsg("%s already installed", name); free(iv); return; }
@@ -179,7 +182,7 @@ void install_name(const char *name) {
             char *s = str_trim(tok);
             if (!*s) continue;
             char *dn = dep_name(s);
-            if (*dn) install_name(dn);
+            if (*dn) install_name_impl(dn, 0);
             free(dn);
         }
         free(deps);
@@ -191,3 +194,6 @@ void install_name(const char *name) {
     free(pkg);
     index_entry_free(&e);
 }
+
+void install_name(const char *name)          { install_name_impl(name, 0); }
+void install_name_explicit(const char *name) { install_name_impl(name, 1); }

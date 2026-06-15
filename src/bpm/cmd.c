@@ -11,7 +11,7 @@ int cmd_install(int argc, char **argv) {
     if (argc < 1) die("usage: bpm install <name|file.pkg.tar.zst>...");
     for (int i = 0; i < argc; i++) {
         if (strstr(argv[i], ".pkg.tar.")) install_file(argv[i]);
-        else                              install_name(argv[i]);
+        else                              install_name_explicit(argv[i]);
     }
     return 0;
 }
@@ -198,9 +198,10 @@ int cmd_owns(int argc, char **argv) {
 int cmd_upgrade(int argc, char **argv) {
     (void)argc; (void)argv;
     if (!file_exists(g_index)) die("no index; run 'bpm update' first");
-    /* collect (name -> installed ver), compare to index, install newer */
+
+    /* collect installed package names */
     DIR *d = opendir(g_db);
-    if (!d) return 0;
+    if (!d) { logmsg("nothing installed"); return 0; }
     char **names = NULL; int n = 0;
     struct dirent *de;
     while ((de = readdir(d))) {
@@ -210,18 +211,61 @@ int cmd_upgrade(int argc, char **argv) {
     }
     closedir(d);
 
+    /* Plan: collect packages whose index version is strictly newer. */
+    char **up = NULL, **from = NULL, **to = NULL; int m = 0;
     for (int i = 0; i < n; i++) {
         char *iv = db_installed_version(names[i]);
         IndexEntry e;
         if (iv && index_lookup(names[i], &e)) {
-            if (strcmp(iv, e.version) != 0) {
-                seen_reset();
-                install_name(names[i]);
+            if (vercmp(e.version, iv) > 0) {
+                up   = xrealloc(up,   (size_t)(m + 1) * sizeof *up);
+                from = xrealloc(from, (size_t)(m + 1) * sizeof *from);
+                to   = xrealloc(to,   (size_t)(m + 1) * sizeof *to);
+                up[m] = xstrdup(names[i]); from[m] = xstrdup(iv);
+                to[m] = xstrdup(e.version); m++;
             }
             index_entry_free(&e);
         }
         free(iv); free(names[i]);
     }
     free(names);
+
+    if (m == 0) { logmsg("everything is up to date"); free(up); free(from); free(to); return 0; }
+
+    /* Show the plan before doing anything. */
+    logmsg("%d package%s to upgrade:", m, m == 1 ? "" : "s");
+    for (int i = 0; i < m; i++)
+        printf("    %-20s %s -> %s\n", up[i], from[i], to[i]);
+    fflush(stdout);
+
+    /* Apply: each upgrade downloads the new package; install_file removes the
+     * old files and lays down the new (handles the version transition). Deps
+     * of the new version are pulled too. */
+    int ok = 0;
+    for (int i = 0; i < m; i++) {
+        seen_reset();
+        IndexEntry e;
+        if (!index_lookup(up[i], &e)) continue;
+        char *pkg = fetch_pkg(e.filename, e.sha256, e.repo);
+        install_file(pkg);
+        free(pkg);
+        /* pull any new dependencies the upgraded version introduced */
+        if (e.deps && *e.deps) {
+            char *deps = xstrdup(e.deps), *sv = NULL;
+            for (char *t = strtok_r(deps, ",", &sv); t; t = strtok_r(NULL, ",", &sv)) {
+                char *s = str_trim(t); if (!*s) continue;
+                size_t k = strcspn(s, "<>=:"); char dn[128];
+                snprintf(dn, sizeof dn, "%.*s", (int)k, s);
+                if (*dn) install_name(dn);
+            }
+            free(deps);
+        }
+        index_entry_free(&e);
+        ok++;
+    }
+    logmsg("upgraded %d/%d package%s", ok, m, m == 1 ? "" : "s");
+
+    for (int i = 0; i < m; i++) { free(up[i]); free(from[i]); free(to[i]); }
+    free(up); free(from); free(to);
     return 0;
 }
