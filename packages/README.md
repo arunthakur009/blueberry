@@ -5,9 +5,9 @@ Linux. Because Blueberry is now built against **glibc**, standard Arch glibc
 binaries run on it — so these build with the normal Arch toolchain and the
 resulting `.pkg.tar.zst` payloads drop straight onto a Blueberry rootfs.
 
-> A native Blueberry package manager is planned. Until then these are plain
-> Arch packages; install them by extracting the payload onto the rootfs
-> (see below).
+> Blueberry has a native package manager now — **`bpm`** (see `src/bpm`). It
+> installs these `.pkg.tar.zst` payloads and resolves their `depends`. You can
+> still extract a payload by hand (see below) for bootstrapping.
 
 ## Layout
 
@@ -16,12 +16,23 @@ packages/
   <name>/PKGBUILD      one directory per package
 ```
 
-Current packages: `zlib`, `ncurses` (base libraries), `wireguard-tools` (`wg`),
-`curl`, `nano`, `vim`, `htop`, `tmux`, `jq`.
+The set spans base libraries (`zlib`, `ncurses`, `openssl`, …), userland tools
+(`curl`, `nano`, `vim`, `htop`, `tmux`, `jq`, `git`), the disk/installer tools
+(`e2fsprogs`, `dosfstools`, `gptfdisk`), and the **compiler toolchain**
+(`binutils`, `gmp`, `mpfr`, `mpc`, `gcc`). Run `ls packages/` for the current
+list.
 
-Dependencies named in each `depends=()` (e.g. `openssl`, `libevent`,
-`oniguruma`) are resolved from the **Arch repositories** at build time — they
-don't all need a PKGBUILD here.
+> **On-device compilation (follow-on).** `gcc`/`binutils` install and run, but
+> compiling C on-device also needs a *dev-SDK layer* that isn't packaged yet:
+> the Linux API headers, and glibc's headers + startup objects (`crt1.o`,
+> `crti.o`, `crtn.o`) + linker scripts. Blueberry currently bundles only the
+> glibc *runtime* (via `tools/bundle-glibc.sh`). Until a `linux-api-headers`
+> and a glibc `-dev` package land, `gcc hello.c` will fail at `#include
+> <stdio.h>`. The compiler packages themselves are complete.
+
+Build-time `makedepends` are resolved from the Arch build container; runtime
+`depends` are satisfied by Blueberry packages (this directory) so nothing pulls
+from Arch on-device.
 
 ## Build one locally (on Arch, for testing)
 
