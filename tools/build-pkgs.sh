@@ -33,6 +33,11 @@ echo "build-pkgs: building$need"
 SCRIPT='
 set -eu
 pacman -Syu --noconfirm --needed base-devel git >/dev/null 2>&1
+# Arch ships MAKEFLAGS commented out, so makepkg builds single-threaded by
+# default — gcc then takes hours. Use every core, and skip debug packages
+# (they only add the gdb-add-index noise and a -debug payload we delete).
+echo "MAKEFLAGS=\"-j\$(nproc)\"" >> /etc/makepkg.conf
+echo "OPTIONS+=(!debug)" >> /etc/makepkg.conf
 useradd -m builder; echo "builder ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/builder
 cp -a /repo /tmp/b; chown -R builder /tmp/b /out
 fail=""
