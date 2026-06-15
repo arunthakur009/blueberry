@@ -41,22 +41,26 @@ for pb in "$DIR"/*/PKGBUILD; do
     [ -n "${pkgrel:-}" ]  || fail "pkgrel unset"
     [ -n "${arch:-}" ]    || fail "arch unset"
 
-    # source[] and sha256sums[] must exist and line up 1:1.
+    # source[] and sha256sums[] must line up 1:1. A meta-package (no source AND
+    # no checksums) is legitimate — it just pulls deps.
     local_src=( "${source[@]:-}" )
     local_sum=( "${sha256sums[@]:-}" )
-    if [ "${#local_src[@]}" -eq 0 ] || [ -z "${local_src[0]}" ]; then
-        fail "source[] empty"
+    have_src=$([ "${#local_src[@]}" -gt 0 ] && [ -n "${local_src[0]}" ] && echo 1 || echo 0)
+    have_sum=$([ "${#local_sum[@]}" -gt 0 ] && [ -n "${local_sum[0]}" ] && echo 1 || echo 0)
+    if [ "$have_src" = 0 ] && [ "$have_sum" = 0 ]; then
+        : # meta-package, nothing to verify
+    else
+        if [ "$have_src" = 0 ]; then fail "source[] empty but sha256sums set"; fi
+        if [ "${#local_sum[@]}" -ne "${#local_src[@]}" ]; then
+            fail "sha256sums (${#local_sum[@]}) != source (${#local_src[@]}) length"
+        fi
+        for s in "${local_sum[@]:-}"; do
+            case "$s" in
+                SKIP)  fail "checksum is SKIP (unverified source)";;
+                *) [[ "$s" =~ ^[0-9a-f]{64}$ ]] || fail "bad sha256sum: '$s'";;
+            esac
+        done
     fi
-    if [ "${#local_sum[@]}" -ne "${#local_src[@]}" ]; then
-        fail "sha256sums (${#local_sum[@]}) != source (${#local_src[@]}) length"
-    fi
-    # Every checksum must be 64 hex chars (a real sha256) — flag SKIP / stubs.
-    for s in "${local_sum[@]:-}"; do
-        case "$s" in
-            SKIP)  fail "checksum is SKIP (unverified source)";;
-            *) [[ "$s" =~ ^[0-9a-f]{64}$ ]] || fail "bad sha256sum: '$s'";;
-        esac
-    done
 
     unset pkgname pkgver pkgrel arch source sha256sums
 done

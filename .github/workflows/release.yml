@@ -1,0 +1,64 @@
+# .github/workflows/release.yml — build a bootable ISO on a version tag and
+# publish it as a GitHub release asset. Does NOT build the package set (that's
+# the repo server's job) — it builds the OS image and ships the installable ISO.
+#
+# Trigger:  git tag v1.2.3 && git push origin v1.2.3
+# Result:   a GitHub Release for the tag with blueberry-<date>-x86_64.iso attached.
+
+name: release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag/name for a manual release'
+        required: false
+
+permissions:
+  contents: write   # needed to create the release + upload assets
+
+env:
+  OBJDIR: /tmp/blueberry-build
+
+jobs:
+  iso:
+    name: Build ISO + publish release
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential bc bison flex libelf-dev libssl-dev \
+            wget xz-utils zstd cpio \
+            grub-efi-amd64-bin grub-pc-bin xorriso mtools dosfstools
+
+      - name: Build world
+        run: make world JOBS="$(nproc)"
+
+      - name: Build ISO
+        run: make iso
+
+      - name: Locate ISO
+        id: iso
+        run: echo "path=$(ls -t iso/blueberry-*.iso | head -1)" >> "$GITHUB_OUTPUT"
+
+      - name: Checksum
+        run: |
+          cd iso && sha256sum "$(basename '${{ steps.iso.outputs.path }}')" \
+            > "$(basename '${{ steps.iso.outputs.path }}').sha256"
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          name: Blueberry ${{ github.event.inputs.tag || github.ref_name }}
+          generate_release_notes: true
+          files: |
+            ${{ steps.iso.outputs.path }}
+            ${{ steps.iso.outputs.path }}.sha256
