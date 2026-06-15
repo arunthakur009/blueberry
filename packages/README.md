@@ -22,13 +22,16 @@ The set spans base libraries (`zlib`, `ncurses`, `openssl`, …), userland tools
 (`binutils`, `gmp`, `mpfr`, `mpc`, `gcc`). Run `ls packages/` for the current
 list.
 
-> **On-device compilation (follow-on).** `gcc`/`binutils` install and run, but
-> compiling C on-device also needs a *dev-SDK layer* that isn't packaged yet:
-> the Linux API headers, and glibc's headers + startup objects (`crt1.o`,
-> `crti.o`, `crtn.o`) + linker scripts. Blueberry currently bundles only the
-> glibc *runtime* (via `tools/bundle-glibc.sh`). Until a `linux-api-headers`
-> and a glibc `-dev` package land, `gcc hello.c` will fail at `#include
-> <stdio.h>`. The compiler packages themselves are complete.
+> **On-device compilation works.** Install the toolchain and the dev SDK:
+>
+>     bpm install base-devel glibc
+>
+> `base-devel` pulls `gcc`, `binutils`, `make` and `linux-api-headers`; `glibc`
+> (requested by name, since the base only *provides* its runtime) adds the libc
+> headers + startup objects (`crt1.o`/`crti.o`/`crtn.o`) + linker scripts. After
+> that, `gcc hello.c` and `g++` compile and link natively — verified in a
+> Blueberry-only root. (`linux-api-headers` matches the Blueberry kernel; `glibc`
+> is the same 2.43 as the bundled runtime, so there's no ABI mismatch.)
 
 Build-time `makedepends` are resolved from the Arch build container; runtime
 `depends` are satisfied by Blueberry packages (this directory) so nothing pulls
