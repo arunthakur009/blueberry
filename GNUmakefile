@@ -31,6 +31,11 @@ OBJDIR_BUILD := $(OBJDIR)/build
 BOOTDIR     := $(OBJDIR)/boot
 STAGEDIR    := $(DESTDIR)
 
+# Packages baked into the base image (built from packages/<name> and extracted
+# into the rootfs at install time). bash = default login shell; ncurses backs
+# it and supplies the terminfo database.
+BASE_PKGS   ?= ncurses bash
+
 LINUX_SRC      := $(OBJDIR_SRC)/linux-$(LINUX_VERSION)
 BUSYBOX_SRC    := $(OBJDIR_SRC)/busybox-$(BUSYBOX_VERSION)
 RUNIT_SRC      := $(OBJDIR_SRC)/runit-$(RUNIT_VERSION)
@@ -233,6 +238,20 @@ _do_install:
 	@install -Dm644 $$(readlink -f /etc/ssl/certs/ca-certificates.crt) \
 	    $(STAGEDIR)/etc/ssl/certs/ca-certificates.crt 2>/dev/null \
 	    || echo "WARNING: host CA bundle not found; HTTPS repos won't verify"
+	@# Base packages shipped in the image. bash is the default interactive shell
+	@# (busybox ash stays as /bin/sh for scripts); ncurses backs it + provides
+	@# the terminfo database. Built once, then extracted into the rootfs.
+	@echo "[install] bundling base packages ($(BASE_PKGS))"
+	@sh $(TOPDIR)/tools/build-pkgs.sh $(OBJDIR)/basepkgs $(BASE_PKGS)
+	@for p in $(BASE_PKGS); do \
+	    zstd -dcq $(OBJDIR)/basepkgs/$$p-*.pkg.tar.zst \
+	        | tar -x -C $(STAGEDIR) --exclude .PKGINFO --exclude .MTREE \
+	          --exclude .BUILDINFO --exclude .INSTALL 2>/dev/null; \
+	done
+	@# trim dev cruft (headers, static libs, man/info, pkgconfig)
+	@rm -rf $(STAGEDIR)/usr/include $(STAGEDIR)/usr/share/man \
+	        $(STAGEDIR)/usr/share/info $(STAGEDIR)/usr/lib/pkgconfig
+	@find $(STAGEDIR)/usr/lib -name '*.a' -delete 2>/dev/null || true
 	@# Bundle the glibc runtime into the rootfs (disk-boot path + external
 	@# prebuilt glibc software). bpm links libzstd, so include it too.
 	@bash $(TOPDIR)/tools/bundle-glibc.sh $(STAGEDIR) \
@@ -240,7 +259,8 @@ _do_install:
 	    $(STAGEDIR)/sbin/runit-init \
 	    $(STAGEDIR)/usr/sbin/dropbearmulti \
 	    $(STAGEDIR)/usr/bin/zstd \
-	    $(STAGEDIR)/usr/bin/bpm
+	    $(STAGEDIR)/usr/bin/bpm \
+	    $(STAGEDIR)/usr/bin/bash
 	@# Copy boot assets (kernel + initramfs) into rootfs/boot for mkiso.sh
 	@cp $(BOOTDIR)/vmlinuz              $(STAGEDIR)/boot/vmlinuz
 	@cp $(BOOTDIR)/initramfs.cpio.zst   $(STAGEDIR)/boot/initramfs.cpio.zst
