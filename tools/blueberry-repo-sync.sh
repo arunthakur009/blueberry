@@ -113,15 +113,21 @@ done
 # container root so the host side (which maps root -> the invoking user under
 # rootless podman) can read and clean them.
 chown -R 0:0 /out
-[ -z "$fail" ] || { echo "repo-sync: build FAILED:$fail" >&2; exit 1; }
+# Record failures but exit 0 so the host can still cache the successes — a
+# rerun then only retries the failed recipes instead of rebuilding everything.
+printf "%s\n" "$fail" > /out/.failed
 '
     log "building in $ENGINE ($IMAGE), -j$jobs"
     "$ENGINE" run --rm --ipc=host --security-opt seccomp=unconfined \
         -v "$TOPDIR:/repo:ro,z" -v "$BUILDOUT:/out:z" "$IMAGE" bash -euc "$SCRIPT"
 
-    # Commit each fresh build into the cache under its content hash, and mark it
-    # current. Old hashes are kept (cheap rollback / parallel branches).
+    failed=$(cat "$BUILDOUT/.failed" 2>/dev/null | tr -s ' ')
+    failed=${failed# }; failed=${failed% }
+
+    # Commit each package that actually produced an artifact into the cache
+    # under its content hash. Failed recipes are skipped (retried next run).
     for p in $need; do
+        ls "$BUILDOUT/$p"/*.pkg.tar.zst >/dev/null 2>&1 || continue
         h=$(pkg_hash "$p")
         dst="$CACHE/$p/$h"
         rm -rf "$dst"; mkdir -p "$dst"
@@ -130,6 +136,10 @@ chown -R 0:0 /out
         : > "$CACHE/$p/$h.stamp"
         log "cached $p ($h)"
     done
+    if [ -n "$failed" ]; then
+        err "build FAILED:$failed (successes cached; rerun retries these)"
+        exit 1
+    fi
 else
     # Nothing built, but make sure every package has a current pointer so the
     # publish step below can find its artifact.

@@ -12,6 +12,7 @@ sha256sums=('4ddebbf09061cbb589011786febdb34f29767dd7f89dbe712d2b68e808af6a1f')
 build() { cd "$pkgname-$pkgver"; make MALLOC=libc; }
 package() {
   cd "$pkgname-$pkgver"
-  make PREFIX=/usr DESTDIR="$pkgdir" install
+  # redis's install target doesn't honour DESTDIR; point PREFIX at the pkgdir.
+  make PREFIX="$pkgdir/usr" install
   install -Dm644 redis.conf "$pkgdir/etc/redis/redis.conf"
 }
