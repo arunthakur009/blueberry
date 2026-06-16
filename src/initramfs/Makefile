@@ -98,7 +98,8 @@ $(BOOTDIR)/initramfs.cpio.zst: $(THISDIR)/init $(THISDIR)/selftest \
 	    ncurses bash
 	@for p in popt e2fsprogs dosfstools gptfdisk json-c device-mapper openssl zlib cryptsetup \
 	          ncurses bash; do \
-	    zstd -dcq $(OBJDIR)/instpkgs/$$p-*.pkg.tar.zst \
+	    f=$$(ls -t $(OBJDIR)/instpkgs/$$p-[0-9]*.pkg.tar.zst | head -1); \
+	    zstd -dcq "$$f" \
 	        | tar -x -C $(INITRAMDIR) --exclude .PKGINFO --exclude .MTREE \
 	          --exclude .BUILDINFO --exclude .INSTALL 2>/dev/null; \
 	done

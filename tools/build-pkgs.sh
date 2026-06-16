@@ -44,6 +44,10 @@ useradd -m builder; echo "builder ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/buil
 cp -a /repo /tmp/b; chown -R builder /tmp/b /out
 fail=""
 for p in '"$need"'; do
+    # Drop any older build of this package so the output dir holds exactly one
+    # version per package — otherwise the extraction globs (base/initramfs) can
+    # pick a stale version after a pkgrel bump.
+    rm -f /out/$p-[0-9]*.pkg.tar.zst
     if ! su builder -c "cd /tmp/b/packages/$p && PKGDEST=/out makepkg -f --skippgpcheck --noconfirm -s" >/tmp/$p.log 2>&1; then
         echo "!! FAILED: $p"; tail -5 /tmp/$p.log; fail="$fail $p"
     fi

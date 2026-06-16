@@ -240,7 +240,8 @@ _do_install:
 	@echo "[install] bundling base packages ($(BASE_PKGS))"
 	@sh $(TOPDIR)/tools/build-pkgs.sh $(OBJDIR)/basepkgs $(BASE_PKGS)
 	@for p in $(BASE_PKGS); do \
-	    zstd -dcq $(OBJDIR)/basepkgs/$$p-*.pkg.tar.zst \
+	    f=$$(ls -t $(OBJDIR)/basepkgs/$$p-[0-9]*.pkg.tar.zst | head -1); \
+	    zstd -dcq "$$f" \
 	        | tar -x -C $(STAGEDIR) --exclude .PKGINFO --exclude .MTREE \
 	          --exclude .BUILDINFO --exclude .INSTALL 2>/dev/null; \
 	done
