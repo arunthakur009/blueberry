@@ -49,6 +49,7 @@ install_services:
 	mkdir -p $(STAGEDIR)/var/service; \
 	mkdir -p $(STAGEDIR)/etc/sv/enabled; \
 	ln -sf /etc/sv/getty-tty1 $(STAGEDIR)/etc/sv/enabled/getty-tty1 2>/dev/null || true; \
+	ln -sf /etc/sv/network    $(STAGEDIR)/etc/sv/enabled/network    2>/dev/null || true; \
 	ln -sf /etc/sv/syslogd    $(STAGEDIR)/etc/sv/enabled/syslogd    2>/dev/null || true; \
 	ln -sf /etc/sv/ntpd       $(STAGEDIR)/etc/sv/enabled/ntpd       2>/dev/null || true; \
 	ln -sf /etc/sv/sshd       $(STAGEDIR)/etc/sv/enabled/sshd       2>/dev/null || true

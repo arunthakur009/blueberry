@@ -1,0 +1,38 @@
+#!/bin/sh
+# network — bring up networking on the installed system (runit-supervised).
+# DHCP by default, or static from /etc/network.conf. Runs in the foreground so
+# runsv supervises it (udhcpc keeps renewing; static config holds the process).
+exec 2>&1
+[ -r /etc/network.conf ] && . /etc/network.conf
+
+# Pick the interface: configured, else the first non-lo ethernet device.
+iface="$INTERFACE"
+if [ -z "$iface" ]; then
+    for p in /sys/class/net/*; do
+        n=${p##*/}
+        [ "$n" = lo ] && continue
+        [ "$(cat "$p/type" 2>/dev/null)" = "1" ] && { iface=$n; break; }
+    done
+fi
+[ -n "$iface" ] || { echo "network: no ethernet interface found"; exec sleep 3600; }
+
+ip link set "$iface" up
+
+case "${METHOD:-dhcp}" in
+    static)
+        echo "network: static $ADDRESS on $iface"
+        ip addr flush dev "$iface" 2>/dev/null
+        [ -n "$ADDRESS" ] && ip addr add "$ADDRESS" dev "$iface"
+        [ -n "$GATEWAY" ] && ip route replace default via "$GATEWAY"
+        if [ -n "$DNS" ]; then
+            : > /etc/resolv.conf
+            for s in $DNS; do printf 'nameserver %s\n' "$s" >> /etc/resolv.conf; done
+        fi
+        # Static config is one-shot; hold the supervised process open.
+        exec tail -f /dev/null
+        ;;
+    *)
+        echo "network: dhcp on $iface"
+        exec udhcpc -f -i "$iface" -s /etc/udhcpc.script
+        ;;
+esac

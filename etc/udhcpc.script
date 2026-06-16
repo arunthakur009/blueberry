@@ -1,0 +1,27 @@
+#!/bin/sh
+# /etc/udhcpc.script — busybox udhcpc lease handler.
+# Applies the DHCP lease using iproute2-style `ip` (busybox applet).
+# busybox exports: interface, ip, subnet, mask, router, dns, domain, ...
+
+case "$1" in
+    deconfig)
+        ip addr flush dev "$interface" 2>/dev/null
+        ip link set "$interface" up 2>/dev/null
+        ;;
+    bound|renew)
+        ip addr add "$ip/${mask:-24}" dev "$interface" 2>/dev/null
+        ip link set "$interface" up 2>/dev/null
+        if [ -n "$router" ]; then
+            ip route del default 2>/dev/null
+            for r in $router; do
+                ip route add default via "$r" dev "$interface" 2>/dev/null
+            done
+        fi
+        : > /etc/resolv.conf
+        [ -n "$domain" ] && echo "search $domain" >> /etc/resolv.conf
+        for d in $dns; do
+            echo "nameserver $d" >> /etc/resolv.conf
+        done
+        ;;
+esac
+exit 0
