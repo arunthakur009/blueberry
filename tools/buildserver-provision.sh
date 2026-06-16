@@ -102,7 +102,8 @@ systemctl daemon-reload
 systemctl enable --now blueberry-build.timer
 
 log "running the first build now (this pulls the Arch build image once)"
-REPO=$REPO BRANCH=$BRANCH WEBROOT=$WEBROOT sh "$REPO/tools/blueberry-build-server.sh" || {
+export REPO BRANCH WEBROOT
+sh "$REPO/tools/blueberry-build-server.sh" || {
     echo "first build failed — check 'journalctl -u blueberry-build' / podman nesting (see doc/BUILDSERVER.md)" >&2
     exit 1
 }

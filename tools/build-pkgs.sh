@@ -22,8 +22,10 @@ need=
 for p in "$@"; do
     pb="$TOPDIR/packages/$p/PKGBUILD"
     [ -f "$pb" ] || { echo "build-pkgs: no such package: $p" >&2; exit 1; }
-    if ! ls "$OUT/$p"-*.pkg.tar.zst >/dev/null 2>&1 \
-       || [ "$pb" -nt "$(ls -t "$OUT/$p"-*.pkg.tar.zst 2>/dev/null | head -1)" ]; then
+    built=$(ls -t "$OUT/$p"-*.pkg.tar.zst 2>/dev/null | head -1)
+    # rebuild when nothing is built yet, or the PKGBUILD is newer than the
+    # newest artifact (find -newer avoids the non-POSIX `test -nt`).
+    if [ -z "$built" ] || [ -n "$(find "$pb" -newer "$built" 2>/dev/null)" ]; then
         need="$need $p"
     fi
 done
