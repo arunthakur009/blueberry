@@ -1,7 +1,7 @@
 # Maintainer: Blueberry Linux <packages@blueberry.linux>
 pkgname=ncurses
 pkgver=6.5
-pkgrel=1
+pkgrel=2
 pkgdesc='System V Release 4.0 curses emulation library (wide-character)'
 arch=('x86_64')
 url='https://invisible-island.net/ncurses/'
@@ -22,7 +22,12 @@ build() {
     --with-pkg-config-libdir=/usr/lib/pkgconfig \
     --without-debug \
     --without-ada \
-    --enable-overwrite
+    --enable-overwrite \
+    --with-versioned-syms
+  # --with-versioned-syms: emit the NCURSES6_TINFO_5.0.19991023 symbol versions
+  # that ncurses-linked binaries (e.g. the bash package) reference. Without it
+  # the dynamic linker warns "libncursesw.so.6: no version information available"
+  # and falls back to unversioned symbols.
   make
 }
 
