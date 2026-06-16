@@ -1,0 +1,18 @@
+# .INSTALL scriptlet for the linux package. bpm sources this and calls
+# post_install / post_upgrade after laying the new kernel down.
+
+post_install() {
+    echo ">> kernel installed at /boot/vmlinuz ($1)"
+    if command -v blueberry-grub-mkconfig >/dev/null 2>&1; then
+        if blueberry-grub-mkconfig; then
+            echo ">> boot configuration updated — reboot to run the new kernel"
+        else
+            echo ">> NOTE: could not regenerate /boot/grub/grub.cfg automatically;"
+            echo ">>       it already points at /vmlinuz, so a plain in-place update still boots."
+        fi
+    fi
+}
+
+post_upgrade() {
+    post_install "$1"
+}

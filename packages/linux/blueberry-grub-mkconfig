@@ -1,0 +1,35 @@
+#!/bin/sh
+# blueberry-grub-mkconfig — regenerate /boot/grub/grub.cfg for an installed
+# Blueberry system. Reads the root device from /etc/fstab and the LUKS mapping
+# from /etc/crypttab (if any), and points the menu entry at the current
+# /boot/vmlinuz + /boot/initramfs.cpio.zst. Run by the linux package's
+# post-install hook so a `bpm install linux` makes the new kernel bootable.
+set -eu
+
+BOOT=${BOOT:-/boot}
+CFG="$BOOT/grub/grub.cfg"
+
+[ -f "$BOOT/vmlinuz" ] || { echo "grub-mkconfig: no $BOOT/vmlinuz" >&2; exit 1; }
+
+# Root device: the fstab entry mounted at "/".
+rootspec=$(awk '$1 !~ /^#/ && $2 == "/" { print $1; exit }' /etc/fstab 2>/dev/null || true)
+[ -n "$rootspec" ] || { echo "grub-mkconfig: cannot find root in /etc/fstab" >&2; exit 1; }
+
+# LUKS: if root is the mapper and crypttab documents it, pass cryptdevice=.
+cryptarg=""
+if [ -f /etc/crypttab ] && [ "$rootspec" = "/dev/mapper/cryptroot" ]; then
+    src=$(awk '$1 !~ /^#/ && $1 == "cryptroot" { print $2; exit }' /etc/crypttab || true)
+    [ -n "$src" ] && cryptarg="cryptdevice=$src:cryptroot "
+fi
+
+mkdir -p "$BOOT/grub"
+{
+    printf 'set timeout=3\n'
+    printf "menuentry 'Blueberry Linux' {\n"
+    printf '    linux /vmlinuz %sroot=%s rw console=tty0 console=ttyS0,115200\n' \
+        "$cryptarg" "$rootspec"
+    [ -f "$BOOT/initramfs.cpio.zst" ] && printf '    initrd /initramfs.cpio.zst\n'
+    printf '}\n'
+} > "$CFG"
+
+echo "grub-mkconfig: wrote $CFG (root=$rootspec)"
