@@ -7,6 +7,7 @@ mod index;
 mod net;
 mod pkg;
 mod repo;
+mod repokey;
 mod sig;
 mod vercmp;
 

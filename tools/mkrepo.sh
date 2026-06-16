@@ -11,13 +11,13 @@
 # Signing: if a signing key is available (BPM_SIGN_KEY env, default
 #   ~/.config/bpm/repo-signing-key.pem), the index is signed with ECDSA
 #   P-256/SHA-256 and the detached DER signature written to bpm.index.sig.
-#   bpm verifies that against the public key baked into src/bpm/repokey.h.
+#   bpm verifies that against the public key baked into src/bpm-rs/src/repokey.rs.
 #   To rotate keys: regenerate the keypair (see KEYGEN below) and re-emit the
 #   header, then rebuild bpm.
 #
 # KEYGEN:
 #   openssl ecparam -name prime256v1 -genkey -noout -out repo-signing-key.pem
-#   # re-bake the public point into src/bpm/repokey.h (tools/mkrepokey.sh)
+#   # re-bake the public point into src/bpm-rs/src/repokey.rs (tools/mkrepokey.sh)
 
 set -eu
 REPO="${1:-.}"

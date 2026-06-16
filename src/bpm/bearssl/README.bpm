@@ -1,3 +1,0 @@
-BearSSL 0.6 (https://bearssl.org/) — vendored, MIT licensed.
-Upstream sha256(bearssl-0.6.tar.gz)=6705bba1714961b41a728dfc5debbe348d2966c117649392f8c8139efc83ff14
-Used for HTTPS (TLS) support in bpm. inc/ + src/ only; tools/ and tests omitted.

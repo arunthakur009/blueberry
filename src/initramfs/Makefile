@@ -17,8 +17,8 @@ all: $(BOOTDIR)/initramfs.cpio.zst
 $(BOOTDIR)/initramfs.cpio.zst: $(THISDIR)/init $(THISDIR)/selftest \
                                $(THISDIR)/profile $(THISDIR)/udhcpc.script \
                                $(THISDIR)/shadow $(THISDIR)/Makefile \
-                               $(wildcard $(THISDIR)/../bpm/*.c $(THISDIR)/../bpm/*.h) \
-                               $(THISDIR)/../bpm/Makefile \
+                               $(THISDIR)/../bpm-rs/Cargo.toml \
+                               $(wildcard $(THISDIR)/../bpm-rs/src/*.rs) \
                                $(THISDIR)/../installer/blueberry-install.c \
                                $(THISDIR)/../installer/Makefile
 	@echo "[initramfs] assembling"
@@ -72,13 +72,9 @@ $(BOOTDIR)/initramfs.cpio.zst: $(THISDIR)/init $(THISDIR)/selftest \
 	@cp $(THISDIR)/udhcpc.script $(INITRAMDIR)/etc/udhcpc.script
 	@chmod 755 $(INITRAMDIR)/etc/udhcpc.script
 
-	@# bpm package manager (compiled C binary) + default repo config
+	@# bpm package manager (Rust, src/bpm-rs) + default repo config
 	@mkdir -p $(INITRAMDIR)/usr/bin $(INITRAMDIR)/etc/bpm
-	@$(MAKE) --no-print-directory -C $(THISDIR)/../bpm \
-	    CC="$(CC)" CFLAGS="$(CFLAGS)" \
-	    OBJDIR=$(OBJDIR)/bpm BPM_OUT=$(OBJDIR)/bpm/bpm
-	@cp $(OBJDIR)/bpm/bpm $(INITRAMDIR)/usr/bin/bpm
-	@chmod 755 $(INITRAMDIR)/usr/bin/bpm
+	@ARCH=$(ARCH) sh $(THISDIR)/../../tools/build-bpm.sh $(INITRAMDIR)/usr/bin/bpm
 	@cp $(THISDIR)/../../etc/bpm/repos.conf $(INITRAMDIR)/etc/bpm/repos.conf
 	@cp $(THISDIR)/../../etc/bpm/provided  $(INITRAMDIR)/etc/bpm/provided
 
@@ -87,8 +83,8 @@ $(BOOTDIR)/initramfs.cpio.zst: $(THISDIR)/init $(THISDIR)/selftest \
 	@cp -L /etc/ssl/certs/ca-certificates.crt $(INITRAMDIR)/etc/ssl/certs/ca-certificates.crt 2>/dev/null \
 	    || echo "WARNING: host CA bundle not found; HTTPS repos won't verify"
 
-	@# zstd binary — handy on the live system; its libs (libzstd/liblz4/liblzma/
-	@# libz) also satisfy the C bpm, which links libzstd. Picked up by bundle-glibc.
+	@# zstd binary — handy on the live system (the Rust bpm bundles libzstd
+	@# statically, so it doesn't need the shared lib). Picked up by bundle-glibc.
 	@cp $$(command -v zstd) $(INITRAMDIR)/usr/bin/zstd
 
 	@# blueberry-install + its disk tools (sgdisk, mkfs.fat, mkfs.ext4) plus
