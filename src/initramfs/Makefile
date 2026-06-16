@@ -78,7 +78,7 @@ $(BOOTDIR)/initramfs.cpio.zst: $(THISDIR)/init $(THISDIR)/selftest \
 	@cp $(THISDIR)/../../etc/bpm/repos.conf $(INITRAMDIR)/etc/bpm/repos.conf
 	@cp $(THISDIR)/../../etc/bpm/provided  $(INITRAMDIR)/etc/bpm/provided
 
-	@# CA trust store so bpm can verify HTTPS repos (TLS via BearSSL).
+	@# CA trust store so bpm and curl can verify HTTPS (rustls TLS in bpm).
 	@mkdir -p $(INITRAMDIR)/etc/ssl/certs
 	@cp -L /etc/ssl/certs/ca-certificates.crt $(INITRAMDIR)/etc/ssl/certs/ca-certificates.crt 2>/dev/null \
 	    || echo "WARNING: host CA bundle not found; HTTPS repos won't verify"

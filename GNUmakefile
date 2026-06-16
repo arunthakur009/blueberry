@@ -230,7 +230,7 @@ _do_install:
 	@# bpm package manager (Rust, src/bpm-rs) + zstd helper
 	@ARCH=$(ARCH) sh $(TOPDIR)/tools/build-bpm.sh $(STAGEDIR)/usr/bin/bpm
 	@install -Dm755 $$(command -v zstd) $(STAGEDIR)/usr/bin/zstd
-	@# CA trust store so bpm can verify HTTPS repos (TLS via BearSSL).
+	@# CA trust store so bpm and curl can verify HTTPS (rustls TLS in bpm).
 	@install -Dm644 $$(readlink -f /etc/ssl/certs/ca-certificates.crt) \
 	    $(STAGEDIR)/etc/ssl/certs/ca-certificates.crt 2>/dev/null \
 	    || echo "WARNING: host CA bundle not found; HTTPS repos won't verify"

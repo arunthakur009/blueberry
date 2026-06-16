@@ -1,10 +1,10 @@
 # bpm — Blueberry Package Manager
 
 `bpm` installs Arch-format binary packages (`.pkg.tar.zst`) — the output of the
-PKGBUILDs in [`packages/`](../packages/) (built locally with `makepkg` or on
-OBS). It is a small POSIX-sh program (`src/bpm/bpm`) that runs natively on the
-busybox/glibc live system; the only extra runtime it needs is the bundled
-`zstd` binary (busybox has no zstd).
+PKGBUILDs in [`packages/`](../packages/). It is a small Rust program
+([`src/bpm-rs/`](../src/bpm-rs/)) that streams package extraction straight to
+disk; the release binary links only glibc + libgcc_s (libzstd is bundled
+statically), so it runs natively on the live system with no extra runtime.
 
 ## Commands
 

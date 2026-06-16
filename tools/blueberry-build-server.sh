@@ -1,13 +1,13 @@
 #!/bin/sh
-# blueberry-build-server.sh — one command to run on the Rocky build host.
+# blueberry-build-server.sh — one command to run on the build host.
 #
 # Pulls the recipes (PKGBUILDs live in the git repo), then builds anything that
-# isn't already built and publishes the signed repo. Incremental: a package is
+# isn't already built and publishes the repo. Incremental: a package is
 # (re)built only when its packages/<name>/ contents change — everything else is
 # served straight from the build cache. So this is safe to run on a cron/timer
 # or by hand; adding one recipe builds one package.
 #
-# Typical use on Rocky:
+# Typical use:
 #   blueberry-build-server.sh                 # update recipes, build all missing
 #   blueberry-build-server.sh nano vim        # just these
 #   PULL=0 blueberry-build-server.sh          # use the local checkout as-is
@@ -45,8 +45,8 @@ else
     log "using local checkout $REPO as-is (PULL=0)"
 fi
 
-# 2. Build whatever changed/missing and publish the signed repo. repo-sync is
+# 2. Build whatever changed/missing and publish the repo. repo-sync is
 #    the engine: content-hash cache, build in an ephemeral container, prune
-#    superseded artifacts, regenerate + sign bpm.index.
+#    superseded artifacts, regenerate bpm.index (sha256, no signing).
 log "building + publishing"
 exec sh "$REPO/tools/blueberry-repo-sync.sh" "$@"
