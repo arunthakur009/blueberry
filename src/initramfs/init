@@ -210,7 +210,7 @@ banner() {
                                            |___/   Linux
 
   Blueberry Linux — live CLI   ·   kernel $(uname -r)
-  Type 'help' for busybox applets.
+  Run 'bb-install' to install to disk   ·   'help' for busybox applets.
 
 EOF
 }

@@ -111,6 +111,8 @@ $(BOOTDIR)/initramfs.cpio.zst: $(THISDIR)/init $(THISDIR)/selftest \
 	    OBJDIR=$(OBJDIR)/installer OUT=$(OBJDIR)/installer/blueberry-install
 	@cp $(OBJDIR)/installer/blueberry-install $(INITRAMDIR)/usr/bin/blueberry-install
 	@chmod 755 $(INITRAMDIR)/usr/bin/blueberry-install
+	@# short alias — people reach for `bb-install` at the live shell
+	@ln -sf blueberry-install $(INITRAMDIR)/usr/bin/bb-install
 
 	@# Minimal account + hostname so \u resolves and the prompt reads root@blueberry
 	@printf 'root:x:0:0:root:/root:/bin/sh\n' > $(INITRAMDIR)/etc/passwd
