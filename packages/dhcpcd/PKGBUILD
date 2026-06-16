@@ -1,0 +1,18 @@
+# Maintainer: Blueberry Linux <packages@blueberry.linux>
+pkgname=dhcpcd
+pkgver=10.1.0
+pkgrel=1
+pkgdesc='RFC2131 compliant DHCP client daemon'
+arch=('x86_64')
+url='https://roy.marples.name/projects/dhcpcd'
+license=('BSD-2-Clause')
+depends=('glibc')
+source=("https://github.com/NetworkConfiguration/dhcpcd/releases/download/v$pkgver/dhcpcd-$pkgver.tar.xz")
+sha256sums=('abc307c63853da3199baa5c1e15fd5ede9d68d068b2a59ca14c5a6768e9cc3b7')
+build() {
+  cd "$pkgname-$pkgver"
+  ./configure --prefix=/usr --sysconfdir=/etc --libexecdir=/usr/lib/dhcpcd \
+    --dbdir=/var/lib/dhcpcd --rundir=/run --privsepuser=dhcpcd
+  make
+}
+package() { cd "$pkgname-$pkgver"; make DESTDIR="$pkgdir" install; }

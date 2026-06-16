@@ -1,0 +1,17 @@
+# Maintainer: Blueberry Linux <packages@blueberry.linux>
+pkgname=redis
+pkgver=7.4.2
+pkgrel=1
+pkgdesc='In-memory data structure store, used as database, cache and message broker'
+arch=('x86_64')
+url='https://redis.io/'
+license=('BSD-3-Clause')
+depends=('glibc')
+source=("https://download.redis.io/releases/redis-$pkgver.tar.gz")
+sha256sums=('4ddebbf09061cbb589011786febdb34f29767dd7f89dbe712d2b68e808af6a1f')
+build() { cd "$pkgname-$pkgver"; make MALLOC=libc; }
+package() {
+  cd "$pkgname-$pkgver"
+  make PREFIX=/usr DESTDIR="$pkgdir" install
+  install -Dm644 redis.conf "$pkgdir/etc/redis/redis.conf"
+}
