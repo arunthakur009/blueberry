@@ -1,4 +1,10 @@
-/* archive.c — zstd decompression (libzstd) + a ustar/pax/GNU tar reader.
+/* archive.c — streaming zstd (libzstd) + ustar/pax/GNU tar reader.
+ *
+ * The reader never holds a whole package in memory: it decompresses in fixed
+ * chunks and hands each tar member's payload to a callback through a pull-based
+ * ZReader, so even a multi-hundred-MB package (gcc) installs in a few hundred
+ * KB of working set. This is what keeps `bpm install gcc` from being OOM-killed
+ * on small install VMs.
  *
  * makepkg's bsdtar output is ustar with pax extended headers (type 'x') for
  * long paths and high-resolution mtimes, and occasionally GNU long-name records
@@ -11,43 +17,70 @@
 #include <string.h>
 #include <zstd.h>
 
-char *zst_decompress_file(const char *path, size_t *len) {
-    FILE *f = fopen(path, "rb");
-    if (!f) return NULL;
+/* ── streaming decompressor ────────────────────────────────────────────────── */
+struct ZReader {
+    FILE         *f;
+    ZSTD_DStream *ds;
+    unsigned char *in;  size_t in_cap;
+    ZSTD_inBuffer  ib;
+    unsigned char *out; size_t out_cap, out_beg, out_end;
+    int            eof;          /* hit EOF on the compressed input */
+    size_t         entry_remaining;  /* unread payload bytes of current member */
+};
 
-    ZSTD_DStream *ds = ZSTD_createDStream();
-    if (!ds) { fclose(f); return NULL; }
-    ZSTD_initDStream(ds);
+/* Refill the decompressed staging buffer when empty. Returns 1 if bytes are
+ * available, 0 at clean end of stream, -1 on a zstd error. */
+static int zr_fill(ZReader *zr) {
+    if (zr->out_beg < zr->out_end) return 1;
+    zr->out_beg = zr->out_end = 0;
 
-    size_t in_cap = ZSTD_DStreamInSize();
-    size_t out_cap = ZSTD_DStreamOutSize();
-    char *in = xmalloc(in_cap);
-    char *out = xmalloc(out_cap);
-    Buf result; buf_init(&result);
-    int ok = 1;
-
-    size_t r;
-    while ((r = fread(in, 1, in_cap, f)) > 0) {
-        ZSTD_inBuffer ib = { in, r, 0 };
-        while (ib.pos < ib.size) {
-            ZSTD_outBuffer ob = { out, out_cap, 0 };
-            size_t ret = ZSTD_decompressStream(ds, &ob, &ib);
-            if (ZSTD_isError(ret)) { ok = 0; break; }
-            buf_append(&result, out, ob.pos);
+    while (zr->out_end == 0) {
+        if (zr->ib.pos == zr->ib.size) {
+            if (zr->eof) return 0;
+            size_t r = fread(zr->in, 1, zr->in_cap, zr->f);
+            if (r == 0) { zr->eof = 1; return 0; }
+            zr->ib.src = zr->in; zr->ib.size = r; zr->ib.pos = 0;
         }
-        if (!ok) break;
+        ZSTD_outBuffer ob = { zr->out, zr->out_cap, 0 };
+        size_t ret = ZSTD_decompressStream(zr->ds, &ob, &zr->ib);
+        if (ZSTD_isError(ret)) return -1;
+        zr->out_end = ob.pos;
+        if (ob.pos == 0 && zr->ib.pos == zr->ib.size) {
+            /* consumed all input this round; loop to pull more from the file */
+            if (zr->eof) return 0;
+        }
     }
-    if (ferror(f)) ok = 0;
-
-    ZSTD_freeDStream(ds);
-    free(in); free(out); fclose(f);
-    if (!ok) { buf_free(&result); return NULL; }
-    if (len) *len = result.len;
-    return result.data;   /* caller frees */
+    return 1;
 }
 
-/* ── tar ──────────────────────────────────────────────────────────────────── */
+/* Pull up to n decompressed bytes, ignoring tar member boundaries. dst==NULL
+ * skips. Returns bytes actually produced (short only at end of stream). */
+static size_t raw_read(ZReader *zr, void *dst, size_t n) {
+    unsigned char *d = dst;
+    size_t got = 0;
+    while (got < n) {
+        if (zr->out_beg >= zr->out_end) {
+            if (zr_fill(zr) <= 0) break;
+        }
+        size_t avail = zr->out_end - zr->out_beg;
+        size_t take  = n - got; if (take > avail) take = avail;
+        if (d) memcpy(d + got, zr->out + zr->out_beg, take);
+        zr->out_beg += take;
+        got += take;
+    }
+    return got;
+}
 
+/* Public: read up to n bytes of the *current member's* payload (callbacks use
+ * this to stream a file straight to disk). Never reads past the member. */
+size_t zr_read(ZReader *zr, void *dst, size_t n) {
+    if (n > zr->entry_remaining) n = zr->entry_remaining;
+    size_t got = raw_read(zr, dst, n);
+    zr->entry_remaining -= got;
+    return got;
+}
+
+/* ── tar helpers ───────────────────────────────────────────────────────────── */
 static unsigned parse_octal(const char *p, size_t n) {
     unsigned v = 0;
     while (n && (*p == ' ' || *p == '\0')) { p++; n--; }
@@ -80,82 +113,105 @@ static char *pax_value(const char *blk, size_t blksz, const char *key) {
     return NULL;
 }
 
-int tar_iterate(const char *buf, size_t len,
-                int (*cb)(const TarEntry *, void *), void *ctx) {
-    size_t off = 0;
-    char *next_path = NULL;     /* pending name override (pax/GNU) */
-    char *next_link = NULL;
-    int empty = 0;
+/* Read a whole short record (pax/GNU long name) into a malloc'd buffer, then
+ * skip its 512-byte padding. Caller frees. Returns NULL on short read. */
+static char *read_record(ZReader *zr, size_t size) {
+    char *b = xmalloc(size + 1);
+    if (raw_read(zr, b, size) != size) { free(b); return NULL; }
+    b[size] = '\0';
+    size_t pad = (512 - (size % 512)) % 512;
+    raw_read(zr, NULL, pad);
+    return b;
+}
 
-    while (off + 512 <= len) {
-        const char *h = buf + off;
+/* ── streaming package iterator ────────────────────────────────────────────── */
+int pkg_stream(const char *path, pkg_cb cb, void *ctx) {
+    FILE *f = fopen(path, "rb");
+    if (!f) return -1;
 
-        /* End of archive: two consecutive zero blocks. */
+    ZReader zr;
+    memset(&zr, 0, sizeof zr);
+    zr.f = f;
+    zr.ds = ZSTD_createDStream();
+    if (!zr.ds) { fclose(f); return -1; }
+    ZSTD_initDStream(zr.ds);
+    zr.in_cap  = ZSTD_DStreamInSize();
+    zr.out_cap = ZSTD_DStreamOutSize();
+    zr.in  = xmalloc(zr.in_cap);
+    zr.out = xmalloc(zr.out_cap);
+
+    char hdr[512];
+    char *next_path = NULL, *next_link = NULL;
+    int empty = 0, rc = 0;
+
+    for (;;) {
+        if (raw_read(&zr, hdr, 512) != 512) break;     /* clean end / truncated */
+
         int zero = 1;
-        for (int i = 0; i < 512; i++) if (h[i]) { zero = 0; break; }
-        if (zero) { if (++empty >= 2) break; off += 512; continue; }
+        for (int i = 0; i < 512; i++) if (hdr[i]) { zero = 0; break; }
+        if (zero) { if (++empty >= 2) break; continue; }
         empty = 0;
 
-        unsigned size = parse_octal(h + 124, 12);
-        char type = h[156];
-        size_t data_off = off + 512;
-        size_t blocks = (size + 511) / 512;
-        if (data_off + blocks * 512 > len + 511) return -1; /* truncated */
+        unsigned size = parse_octal(hdr + 124, 12);
+        char type = hdr[156];
+        size_t pad = (512 - (size % 512)) % 512;
 
-        if (type == 'x' || type == 'g') {           /* pax extended header */
-            char *pp = pax_value(buf + data_off, size, "path");
-            char *lp = pax_value(buf + data_off, size, "linkpath");
+        if (type == 'x' || type == 'g') {              /* pax extended header */
+            char *blk = read_record(&zr, size);
+            if (!blk) { rc = -1; break; }
+            char *pp = pax_value(blk, size, "path");
+            char *lp = pax_value(blk, size, "linkpath");
             if (pp) { free(next_path); next_path = pp; }
             if (lp) { free(next_link); next_link = lp; }
-            off = data_off + blocks * 512;
+            free(blk);
             continue;
         }
-        if (type == 'L') {                           /* GNU long name */
-            free(next_path);
-            next_path = xmalloc(size + 1);
-            memcpy(next_path, buf + data_off, size); next_path[size] = '\0';
-            off = data_off + blocks * 512;
+        if (type == 'L') {                             /* GNU long name */
+            free(next_path); next_path = read_record(&zr, size);
+            if (!next_path) { rc = -1; break; }
             continue;
         }
-        if (type == 'K') {                           /* GNU long link */
-            free(next_link);
-            next_link = xmalloc(size + 1);
-            memcpy(next_link, buf + data_off, size); next_link[size] = '\0';
-            off = data_off + blocks * 512;
+        if (type == 'K') {                             /* GNU long link */
+            free(next_link); next_link = read_record(&zr, size);
+            if (!next_link) { rc = -1; break; }
             continue;
         }
 
-        /* Regular member. Build the name: prefix + name (ustar), or override. */
         char namebuf[260];   /* 155 prefix + '/' + 100 name + NUL */
         const char *name;
-        if (next_path) {
-            name = next_path;
-        } else {
-            const char *prefix = h + 345;
-            if (prefix[0]) snprintf(namebuf, sizeof namebuf, "%.155s/%.100s", prefix, h);
-            else           snprintf(namebuf, sizeof namebuf, "%.100s", h);
+        if (next_path) name = next_path;
+        else {
+            const char *prefix = hdr + 345;
+            if (prefix[0]) snprintf(namebuf, sizeof namebuf, "%.155s/%.100s", prefix, hdr);
+            else           snprintf(namebuf, sizeof namebuf, "%.100s", hdr);
             name = namebuf;
         }
         char linkbuf[101];
         const char *link;
-        if (next_link) { link = next_link; }
-        else { snprintf(linkbuf, sizeof linkbuf, "%.100s", h + 157); link = linkbuf; }
+        if (next_link) link = next_link;
+        else { snprintf(linkbuf, sizeof linkbuf, "%.100s", hdr + 157); link = linkbuf; }
 
         TarEntry e;
-        e.name = name;
+        e.name     = name;
         e.linkname = link;
-        e.data = buf + data_off;
-        e.size = size;
-        e.mode = parse_octal(h + 100, 8) & 07777;
-        e.type = (type == '\0') ? '0' : type;
+        e.size     = size;
+        e.mode     = parse_octal(hdr + 100, 8) & 07777;
+        e.type     = (type == '\0') ? '0' : type;
 
-        int rc = cb(&e, ctx);
+        zr.entry_remaining = size;
+        rc = cb(&e, &zr, ctx);
+
+        /* Drain whatever the callback left, plus padding to the next header. */
+        raw_read(&zr, NULL, zr.entry_remaining);
+        raw_read(&zr, NULL, pad);
+
         free(next_path); next_path = NULL;
         free(next_link); next_link = NULL;
-        if (rc) { return rc; }
-
-        off = data_off + blocks * 512;
+        if (rc) break;
     }
+
     free(next_path); free(next_link);
-    return 0;
+    ZSTD_freeDStream(zr.ds);
+    free(zr.in); free(zr.out); fclose(f);
+    return rc;
 }

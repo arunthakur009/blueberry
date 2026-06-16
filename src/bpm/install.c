@@ -52,6 +52,10 @@ struct ictx {
     char **files;   /* collected installed paths (no leading slash, no dirs) */
     int    n;
     int    failed;
+    char  *info;        /* .PKGINFO text (first member in a makepkg tarball) */
+    char  *name;        /* pkgname, resolved from .PKGINFO */
+    char  *ver;         /* pkgver */
+    int    old_settled; /* old version's files removed before writing payload */
 };
 
 static void files_add(struct ictx *c, const char *rel) {
@@ -59,12 +63,59 @@ static void files_add(struct ictx *c, const char *rel) {
     c->files[c->n++] = xstrdup(rel);
 }
 
-static int extract_cb(const TarEntry *e, void *p) {
+/* Drain a member's payload to disk in bounded chunks. */
+static int write_member(ZReader *zr, const char *full, unsigned mode) {
+    FILE *of = fopen(full, "wb");
+    if (!of) return -1;
+    unsigned char buf[65536];
+    size_t got;
+    int rc = 0;
+    while ((got = zr_read(zr, buf, sizeof buf)) > 0)
+        if (fwrite(buf, 1, got, of) != got) { rc = -1; break; }
+    if (fclose(of) != 0) rc = -1;
+    if (rc == 0) chmod(full, mode ? mode : 0644);
+    return rc;
+}
+
+/* Before writing the first real payload file, settle any previously installed
+ * version: remove its files so an upgrade doesn't leave orphans behind. Called
+ * lazily because .PKGINFO (which gives us the name) precedes the payload. */
+static void settle_old(struct ictx *c) {
+    if (c->old_settled) return;
+    c->old_settled = 1;
+    if (!c->name) return;
+    char *old = db_installed_version(c->name);
+    if (old) {
+        logmsg("reinstall/upgrade %s %s -> %s", c->name, old,
+               c->ver ? c->ver : "?");
+        db_remove_files(c->name);
+        free(old);
+    } else {
+        logmsg("installing %s %s", c->name, c->ver ? c->ver : "?");
+    }
+}
+
+static int extract_cb(const TarEntry *e, ZReader *zr, void *p) {
     struct ictx *c = p;
     const char *rel = e->name;
     if (rel[0] == '.' && rel[1] == '/') rel += 2;
-    if (!*rel || is_meta(rel)) return 0;
+    if (!*rel) return 0;
 
+    if (is_meta(rel)) {
+        /* capture .PKGINFO; other metadata is skipped (drained by framework) */
+        if (!strcmp(rel, ".PKGINFO") && !c->info) {
+            Buf b; buf_init(&b);
+            unsigned char tmp[8192]; size_t got;
+            while ((got = zr_read(zr, tmp, sizeof tmp)) > 0) buf_append(&b, tmp, got);
+            buf_putc(&b, '\0');
+            c->info = b.data;
+            c->name = pkginfo_field(c->info, "pkgname");
+            c->ver  = pkginfo_field(c->info, "pkgver");
+        }
+        return 0;
+    }
+
+    settle_old(c);              /* first payload member → clear old version */
     char *full = xasprintf("%s/%s", g_dest, rel);
 
     if (e->type == '5') {                       /* directory */
@@ -73,7 +124,6 @@ static int extract_cb(const TarEntry *e, void *p) {
         mkparents(full);
         unlink(full);
         if (symlink(e->linkname, full) != 0) c->failed = 1;
-        /* record without trailing slash */
         size_t L = strlen(rel);
         char *r = xstrdup(rel); if (L && r[L-1] == '/') r[L-1] = '\0';
         files_add(c, r); free(r);
@@ -86,60 +136,35 @@ static int extract_cb(const TarEntry *e, void *p) {
         files_add(c, rel);
     } else {                                    /* regular file */
         mkparents(full);
-        if (write_file(full, e->data, e->size) != 0) c->failed = 1;
-        else chmod(full, e->mode ? e->mode : 0644);
+        unlink(full);
+        if (write_member(zr, full, e->mode) != 0) c->failed = 1;
         files_add(c, rel);
     }
     free(full);
     return 0;
 }
 
-struct finfo { char *info; };
-static int find_pkginfo(const TarEntry *e, void *p) {
-    const char *nm = e->name;
-    if (nm[0] == '.' && nm[1] == '/') nm += 2;
-    if (!strcmp(nm, ".PKGINFO")) {
-        struct finfo *c = p;
-        c->info = xmalloc(e->size + 1);
-        memcpy(c->info, e->data, e->size); c->info[e->size] = '\0';
-        return 1;
-    }
-    return 0;
-}
-
 void install_file(const char *path) {
     if (!file_exists(path)) die("no such package file: %s", path);
 
-    size_t tlen; char *tar = zst_decompress_file(path, &tlen);
-    if (!tar) die("not a package (cannot decompress): %s", path);
-
-    struct finfo fi = { NULL };
-    tar_iterate(tar, tlen, find_pkginfo, &fi);
-    if (!fi.info) { free(tar); die("not a package (no .PKGINFO): %s", path); }
-
-    char *name = pkginfo_field(fi.info, "pkgname");
-    char *ver  = pkginfo_field(fi.info, "pkgver");
-    if (!name) { free(tar); free(fi.info); die("package has no pkgname: %s", path); }
-
-    char *old = db_installed_version(name);
-    if (old) {
-        logmsg("reinstall/upgrade %s %s -> %s", name, old, ver ? ver : "?");
-        db_remove_files(name);
-    } else {
-        logmsg("installing %s %s", name, ver ? ver : "?");
-    }
-
-    struct ictx c = { NULL, 0, 0 };
     mkdirs(g_dest);
-    tar_iterate(tar, tlen, extract_cb, &c);
-    if (c.failed) warn("%s: some files could not be written", name);
+    struct ictx c = { NULL, 0, 0, NULL, NULL, NULL, 0 };
+    if (pkg_stream(path, extract_cb, &c) < 0) {
+        free(c.info); free(c.name); free(c.ver);
+        for (int i = 0; i < c.n; i++) free(c.files[i]);
+        free(c.files);
+        die("not a package (cannot read): %s", path);
+    }
+    if (!c.info) die("not a package (no .PKGINFO): %s", path);
+    if (!c.name) die("package has no pkgname: %s", path);
+    if (c.failed) warn("%s: some files could not be written", c.name);
 
-    db_record(name, fi.info, c.files, c.n);
-    logmsg("installed %s %s", name, ver ? ver : "?");
+    db_record(c.name, c.info, c.files, c.n);
+    logmsg("installed %s %s", c.name, c.ver ? c.ver : "?");
 
     for (int i = 0; i < c.n; i++) free(c.files[i]);
     free(c.files);
-    free(old); free(name); free(ver); free(fi.info); free(tar);
+    free(c.info); free(c.name); free(c.ver);
 }
 
 /* ── dependency resolution ─────────────────────────────────────────────────── */

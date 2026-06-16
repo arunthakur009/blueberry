@@ -77,25 +77,32 @@ int sig_verify_index(const void *data, size_t len,
 int sig_required(void);
 
 /* ── archive.c ──────────────────────────────────────────────────────────── */
-/* Decompress a .zst file fully into memory. Returns malloc'd buffer, sets
- * *len. NULL on error. */
-char *zst_decompress_file(const char *path, size_t *len);
+/* Pull-based reader over a streaming-decompressed package. Opaque. */
+typedef struct ZReader ZReader;
 
 /* One tar member. name/linkname point into caller-managed storage valid only
- * during the callback. data points into the tar buffer. */
+ * during the callback. Payload is streamed, not buffered: read it with
+ * zr_read() inside the callback. */
 typedef struct {
     const char *name;
     const char *linkname;
-    const char *data;
     size_t      size;
     unsigned    mode;
     char        type;       /* '0' file, '5' dir, '2' symlink, '1' hardlink */
 } TarEntry;
 
-/* Iterate ustar/pax members in an in-memory tar. cb returns 0 to continue,
- * non-zero to stop (that value is returned). Returns <0 on parse error. */
-int tar_iterate(const char *buf, size_t len,
-                int (*cb)(const TarEntry *, void *), void *ctx);
+/* Read up to n bytes of the current member's payload into dst. Returns bytes
+ * read (0 once the member is exhausted). Only valid during the callback. */
+size_t zr_read(ZReader *zr, void *dst, size_t n);
+
+typedef int (*pkg_cb)(const TarEntry *, ZReader *, void *);
+
+/* Stream a .pkg.tar.zst, invoking cb per member with a ZReader positioned at
+ * the member's payload. Whatever the callback leaves unread is drained
+ * automatically. cb returns 0 to continue, non-zero to stop (returned).
+ * Returns <0 on open/decompress/parse error. Memory use is bounded regardless
+ * of package size. */
+int pkg_stream(const char *path, pkg_cb cb, void *ctx);
 
 /* ── net.c ──────────────────────────────────────────────────────────────── */
 /* HTTP(S) GET <url> into <outpath>. Follows a few redirects. http:// and
