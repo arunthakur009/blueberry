@@ -57,6 +57,12 @@ log "configuring nginx to serve $WEBROOT on :$PORT"
 cat > /etc/nginx/sites-available/blueberry-repo <<EOF
 # Blueberry bpm repo. Put TLS in front (Cloudflare / a reverse proxy); bpm
 # verifies each package by SHA-256 from the index, which is fetched over TLS.
+#
+# no-store: package files and the index change in place on every publish, so a
+# CDN/proxy must NOT cache them — a stale cached .pkg.tar.zst won't match the
+# fresh index sha and bpm will (correctly) reject it. Pair this with a Cloudflare
+# "Cache Rule: Bypass cache" for this hostname; respecting these headers alone
+# isn't Cloudflare's default for static files.
 server {
     listen $PORT default_server;
     listen [::]:$PORT default_server;
@@ -64,6 +70,7 @@ server {
     root $WEBROOT;
     autoindex on;
     default_type application/octet-stream;
+    add_header Cache-Control "no-store, max-age=0" always;
     location / { try_files \$uri \$uri/ =404; }
 }
 EOF
