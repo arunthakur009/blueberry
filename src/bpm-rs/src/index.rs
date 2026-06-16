@@ -1,0 +1,141 @@
+//! The repo index, repos.conf, the "provided" base set, and .PKGINFO parsing.
+//!
+//! Local index line:  name|version|filename|sha256|deps(comma)|repo
+//! repos.conf line:   <name> <url1> [url2 ...]   (extra urls are mirrors)
+
+use crate::config::Config;
+use std::fs;
+use std::path::Path;
+
+#[derive(Clone, Debug)]
+pub struct Entry {
+    pub name: String,
+    pub version: String,
+    pub filename: String,
+    pub sha256: String,
+    pub deps: Vec<String>,
+    pub repo: String,
+}
+
+fn parse_line(line: &str) -> Option<Entry> {
+    let mut f = line.splitn(6, '|');
+    let name = f.next()?.to_string();
+    let version = f.next().unwrap_or("").to_string();
+    let filename = f.next().unwrap_or("").to_string();
+    let sha256 = f.next().unwrap_or("").to_string();
+    let deps = f.next().unwrap_or("");
+    let repo = f.next().unwrap_or("").to_string();
+    if name.is_empty() {
+        return None;
+    }
+    let deps = deps
+        .split(',')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
+        .collect();
+    Some(Entry {
+        name,
+        version,
+        filename,
+        sha256,
+        deps,
+        repo,
+    })
+}
+
+/// Every entry in the synced index (empty if `bpm update` hasn't run).
+pub fn load_all(cfg: &Config) -> Vec<Entry> {
+    let txt = fs::read_to_string(&cfg.index).unwrap_or_default();
+    txt.lines().filter_map(parse_line).collect()
+}
+
+/// First entry matching `name`.
+pub fn lookup(cfg: &Config, name: &str) -> Option<Entry> {
+    let txt = fs::read_to_string(&cfg.index).ok()?;
+    txt.lines()
+        .filter(|l| l.starts_with(name) && l.as_bytes().get(name.len()) == Some(&b'|'))
+        .find_map(parse_line)
+}
+
+/// Mirror URLs for a repo, in order (first is primary).
+pub fn mirrors(cfg: &Config, repo: &str) -> Vec<String> {
+    let txt = match fs::read_to_string(&cfg.conf) {
+        Ok(t) => t,
+        Err(_) => return Vec::new(),
+    };
+    for line in txt.lines() {
+        let s = line.trim();
+        if s.is_empty() || s.starts_with('#') {
+            continue;
+        }
+        let mut it = s.split_whitespace();
+        if it.next() == Some(repo) {
+            return it.map(|u| u.to_string()).collect();
+        }
+    }
+    Vec::new()
+}
+
+/// Strip a dependency atom of version/provider syntax: "glibc>=2.38" -> "glibc".
+pub fn dep_name(atom: &str) -> &str {
+    let end = atom
+        .find(['<', '>', '=', ':'])
+        .unwrap_or(atom.len());
+    &atom[..end]
+}
+
+/// Base packages the live image already provides (built-in list, extended by
+/// /etc/bpm/provided). A dep in this set is treated as already satisfied.
+const BASE: &[&str] = &[
+    "glibc", "gcc-libs", "bash", "sh", "dash", "filesystem", "busybox", "coreutils", "util-linux",
+    "findutils", "grep", "sed", "gawk", "awk", "gzip", "procps-ng", "iproute2", "iputils",
+    "dropbear", "ld-linux", "glibc-locales", "tzdata",
+];
+
+pub fn is_provided(cfg: &Config, name: &str) -> bool {
+    if BASE.contains(&name) {
+        return true;
+    }
+    if let Ok(txt) = fs::read_to_string(&cfg.provided) {
+        for line in txt.lines() {
+            let s = line.trim();
+            if s.is_empty() || s.starts_with('#') {
+                continue;
+            }
+            if s == name {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// Value of a `key = value` field in .PKGINFO text.
+pub fn pkginfo_field(info: &str, key: &str) -> Option<String> {
+    for line in info.lines() {
+        if let Some((k, v)) = line.split_once('=') {
+            if k.trim() == key {
+                return Some(v.trim().to_string());
+            }
+        }
+    }
+    None
+}
+
+/// Lowercase hex SHA-256 of a file, streamed.
+pub fn sha256_file(path: &Path) -> std::io::Result<String> {
+    use sha2::{Digest, Sha256};
+    let mut f = fs::File::open(path)?;
+    let mut h = Sha256::new();
+    std::io::copy(&mut f, &mut h)?;
+    Ok(hex(&h.finalize()))
+}
+
+pub fn hex(bytes: &[u8]) -> String {
+    let mut s = String::with_capacity(bytes.len() * 2);
+    for b in bytes {
+        s.push_str(&format!("{b:02x}"));
+    }
+    s
+}
