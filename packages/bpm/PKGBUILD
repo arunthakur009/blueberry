@@ -13,6 +13,11 @@ url='https://github.com/zsigisti/blueberry'
 license=('MIT')
 depends=('glibc' 'gcc-libs')
 makedepends=('rust')
+# makepkg's global LTO turns zstd-sys's C objects into LTO bitcode that clashes
+# with the crate's own (Cargo.toml) LTO at link time — lld bails with "too many
+# errors". Cargo already does release LTO internally, so just opt out of
+# makepkg's.
+options=('!lto')
 # No source=(): built from the repo tree mounted into the build container.
 
 build() {
