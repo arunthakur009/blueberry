@@ -79,6 +79,14 @@ setup_network() {
         ip link set "$iface" up 2>/dev/null
         udhcpc -b -i "$iface" -s /etc/udhcpc.script -t 4 -T 1 2>/dev/null &
     done
+    # QEMU SLIRP advertises a useless site-local IPv6 (fec0::) with no route to
+    # the internet; dual-stack name lookups then prefer an unreachable AAAA and
+    # downloads stall. If nothing got a global IPv6, turn IPv6 off so resolution
+    # sticks to IPv4. A real network with SLAAC/DHCPv6 keeps IPv6 on.
+    sleep 1
+    if ! ip -6 addr show scope global 2>/dev/null | grep -q "inet6"; then
+        echo 1 > /proc/sys/net/ipv6/conf/all/disable_ipv6 2>/dev/null || true
+    fi
 }
 
 # ── SSH ───────────────────────────────────────────────────────────────────────

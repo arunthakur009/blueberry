@@ -4,12 +4,33 @@
 
 use std::fs::File;
 use std::io;
+use std::net::{SocketAddr, ToSocketAddrs};
 use std::path::Path;
+use std::sync::OnceLock;
+use std::time::Duration;
+
+/// Shared agent with an IPv4-first resolver. Many setups (notably QEMU SLIRP)
+/// hand out a site-local IPv6 with no route to the internet; a dual-stack repo
+/// then resolves to an unreachable AAAA and downloads hang/fail. Trying IPv4
+/// first makes bpm work regardless of a broken/half-configured IPv6 stack.
+fn agent() -> &'static ureq::Agent {
+    static AGENT: OnceLock<ureq::Agent> = OnceLock::new();
+    AGENT.get_or_init(|| {
+        ureq::builder()
+            .timeout(Duration::from_secs(60))
+            .resolver(|netloc: &str| -> io::Result<Vec<SocketAddr>> {
+                let mut addrs: Vec<SocketAddr> = netloc.to_socket_addrs()?.collect();
+                addrs.sort_by_key(SocketAddr::is_ipv6); // IPv4 (false) before IPv6
+                Ok(addrs)
+            })
+            .build()
+    })
+}
 
 /// GET `url` into `dest` (truncating). Returns Ok on a 2xx response.
 pub fn get(url: &str, dest: &Path) -> io::Result<()> {
-    let resp = ureq::get(url)
-        .timeout(std::time::Duration::from_secs(60))
+    let resp = agent()
+        .get(url)
         .call()
         .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
     let mut reader = resp.into_reader();
