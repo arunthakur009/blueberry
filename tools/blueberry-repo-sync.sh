@@ -107,6 +107,10 @@ for p in '"$need"'; do
     fi
     rm -f /out/$p/*-debug-*.pkg.tar.zst
 done
+# makepkg ran as the unprivileged "builder"; hand the artifacts back to the
+# container root so the host side (which maps root -> the invoking user under
+# rootless podman) can read and clean them.
+chown -R 0:0 /out
 [ -z "$fail" ] || { echo "repo-sync: build FAILED:$fail" >&2; exit 1; }
 '
     log "building in $ENGINE ($IMAGE), -j$jobs"
