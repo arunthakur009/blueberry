@@ -17,7 +17,12 @@ fn agent() -> &'static ureq::Agent {
     static AGENT: OnceLock<ureq::Agent> = OnceLock::new();
     AGENT.get_or_init(|| {
         ureq::builder()
-            .timeout(Duration::from_secs(60))
+            // Connect timeout fails fast on an unreachable mirror; the read
+            // timeout is per-read (resets while bytes flow), so a large package
+            // (gcc is ~84 MB) downloads for as long as it keeps making progress.
+            // A single overall timeout would kill big downloads on slow links.
+            .timeout_connect(Duration::from_secs(20))
+            .timeout_read(Duration::from_secs(120))
             .resolver(|netloc: &str| -> io::Result<Vec<SocketAddr>> {
                 let mut addrs: Vec<SocketAddr> = netloc.to_socket_addrs()?.collect();
                 addrs.sort_by_key(SocketAddr::is_ipv6); // IPv4 (false) before IPv6
