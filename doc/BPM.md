@@ -48,12 +48,38 @@ unreachable.
 Build a repo from a directory of `.pkg.tar.zst` with `tools/mkrepo.sh`:
 
 ```sh
-tools/mkrepo.sh /path/to/repo      # writes /path/to/repo/bpm.index
+tools/mkrepo.sh /path/to/repo      # writes /path/to/repo/bpm.index (+ .sig)
 ```
 
-Mirroring the repo across servers is handled by a separate project:
+### Building + publishing a repo
+
+`tools/blueberry-repo-sync.sh` builds the `packages/` tree and publishes a
+signed repo. It is **incremental by content hash**: a package is rebuilt only
+when the contents of its `packages/<name>/` directory change, so adding one
+package builds one package, not all of them.
+
+```sh
+# build everything that changed, publish to $WEBROOT, reindex + sign
+WEBROOT=/var/www/html/x86_64 tools/blueberry-repo-sync.sh
+
+# just check what would build/publish
+tools/blueberry-repo-sync.sh -n
+
+# force a single package through the pipeline
+tools/blueberry-repo-sync.sh nano
+```
+
+The build cache (`$CACHE`, default `/var/cache/blueberry-repo-sync`) is a
+**private directory, never the webroot**. The webroot is a pure publish target:
+artifacts are copied in, superseded versions pruned, and `bpm.index` regenerated
+and signed. Nothing served is ever used to decide what to rebuild, so a wiped or
+hand-edited webroot can't trigger a full rebuild and a half-built artifact can
+never be served. Builds run in an ephemeral Arch container (`ENGINE`/`IMAGE`),
+parallel across all cores (`JOBS`).
+
+Mirroring the repo across multiple servers is handled by a separate project:
 **[blueberry-mirror](https://github.com/zsigisti/blueberry-mirror)**
-(`bpm-mirror-sync` + nginx + a systemd timer).
+(nginx + a systemd timer that runs this sync).
 
 ## Example
 
