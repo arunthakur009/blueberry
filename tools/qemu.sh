@@ -10,7 +10,10 @@
 #             (default: ../blueberry-build/boot relative to this script)
 #   ARCH      x86_64 (default)
 #   MEM       guest RAM (default 512M)
-#   DISK      run-mode disk size (default 2G); DISK_IMG overrides its path
+#   DISK      run-mode disk size, e.g. 4G — attaches a persistent /dev/sda so
+#             you can test the installer (bb-install). Unset/empty/"none" =>
+#             no disk (the live CLI runs entirely from RAM). DISK_IMG overrides
+#             the image path.
 #   TIMEOUT   seconds before the test run is killed (default 90)
 
 set -euo pipefail
@@ -59,20 +62,29 @@ HW_QUIET="bonding.max_bonds=0 dummy.numdummies=0"
 case "$MODE" in
 # ──────────────────────────────────────────────────────────────────────────────
 run)
-    # Persistent AHCI disk so the live CLI has writable storage and an install
-    # target (shows up as /dev/sda — the installer's default). Size via DISK=,
-    # path via DISK_IMG=. Created on first run, reused after; delete it to reset.
-    DISK_SIZE="${DISK:-2G}"
-    DISK_IMG="${DISK_IMG:-$(dirname "$BOOTDIR")/run-disk.qcow2}"
-    if [ ! -f "$DISK_IMG" ]; then
-        echo "[qemu] creating $DISK_SIZE disk: $DISK_IMG"
-        qemu-img create -f qcow2 "$DISK_IMG" "$DISK_SIZE" >/dev/null
+    # The live CLI runs entirely from the initramfs in RAM — no disk needed. A
+    # persistent disk is only useful for testing the installer (bb-install), so
+    # it is opt-in: set DISK=<size> (e.g. DISK=4G) to attach a writable AHCI
+    # disk as /dev/sda. Path via DISK_IMG=; created on first use, reused after.
+    DISK_ARGS=()
+    DISK_SIZE="${DISK:-}"
+    case "$DISK_SIZE" in ""|none|no|0) DISK_SIZE="" ;; esac
+    if [ -n "$DISK_SIZE" ]; then
+        DISK_IMG="${DISK_IMG:-$(dirname "$BOOTDIR")/run-disk.qcow2}"
+        if [ ! -f "$DISK_IMG" ]; then
+            echo "[qemu] creating $DISK_SIZE disk: $DISK_IMG"
+            qemu-img create -f qcow2 "$DISK_IMG" "$DISK_SIZE" >/dev/null
+        fi
+        DISK_ARGS=(-drive "file=$DISK_IMG,if=none,format=qcow2,id=hd0"
+                   -device ahci,id=ahci -device ide-hd,drive=hd0,bus=ahci.0)
     fi
-    DISK_ARGS=(-drive "file=$DISK_IMG,if=none,format=qcow2,id=hd0"
-               -device ahci,id=ahci -device ide-hd,drive=hd0,bus=ahci.0)
     echo "[qemu] booting Blueberry live CLI ($ARCH) — Ctrl-A X to quit"
     echo "[qemu] SSH:  ssh -p ${SSH_PORT} root@localhost   (password: blueberry)"
-    echo "[qemu] disk: $DISK_IMG ($DISK_SIZE) -> /dev/sda  (run 'bb-install' to install)"
+    if [ -n "$DISK_SIZE" ]; then
+        echo "[qemu] disk: $DISK_IMG ($DISK_SIZE) -> /dev/sda  (run 'bb-install' to install)"
+    else
+        echo "[qemu] disk: none (set DISK=4G to attach an install target)"
+    fi
     echo "──────────────────────────────────────────────────────────"
     exec "$QEMU" "${MACHINE_ARGS[@]}" "${NET_ARGS[@]}" "${DISK_ARGS[@]}" \
         -kernel "$KERNEL" -initrd "$INITRD" \

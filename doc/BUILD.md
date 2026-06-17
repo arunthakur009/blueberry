@@ -132,6 +132,14 @@ Boots `vmlinuz` + initramfs in QEMU and drops you into the interactive live
 CLI. Serial is wired to your terminal; quit with **Ctrl-A X**. Uses KVM
 automatically when `/dev/kvm` is available, otherwise falls back to TCG.
 
+The live CLI runs entirely from RAM, so no disk is attached by default. To test
+the installer, set `DISK=<size>` to attach a persistent writable disk as
+`/dev/sda` (created on first use, reused after):
+
+```sh
+make run DISK=4G      # /dev/sda present → run 'bb-install' inside the guest
+```
+
 ### `make test`
 
 Boots headless with `bbtest` on the kernel command line. The in-guest
@@ -178,6 +186,7 @@ make test TIMEOUT=180
 | `CFLAGS` | `-Os -pipe -fstack-protector-strong` | C compiler flags |
 | `KERNEL_LOCALVERSION` | `-blueberry` | Kernel version suffix |
 | `MEM` | `512M` | QEMU guest RAM (`make run`/`test`) |
+| `DISK` | _(none)_ | `make run` disk size, e.g. `4G`, attached as `/dev/sda`; unset = diskless |
 | `TIMEOUT` | `90` | QEMU self-test watchdog seconds (`make test`) |
 
 ---
