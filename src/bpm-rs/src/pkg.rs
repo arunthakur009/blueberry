@@ -166,18 +166,19 @@ pub fn install_file(cfg: &Config, path: &Path, force: bool) -> io::Result<String
         if !settled {
             settled = true;
             if let Some(ref n) = name {
+                let ver = version.as_deref().unwrap_or("?");
                 if let Some(old) = db::installed_version(cfg, n) {
-                    println!(
-                        ":: reinstall/upgrade {} {} -> {}",
-                        n,
-                        old,
-                        version.as_deref().unwrap_or("?")
-                    );
+                    println!(":: reinstall/upgrade {n} {old} -> {ver}");
                     upgrade = true;
+                    // pre_upgrade runs while the old version's files are still on
+                    // disk — this is what lets the linux package stash the
+                    // running /boot/vmlinuz as a fallback before it's replaced.
+                    run_hook(cfg, n, script.as_deref(), "pre_upgrade", ver, &old);
                     old_version = Some(old);
                     db::remove_files(cfg, n);
                 } else {
-                    println!(":: installing {} {}", n, version.as_deref().unwrap_or("?"));
+                    println!(":: installing {n} {ver}");
+                    run_hook(cfg, n, script.as_deref(), "pre_install", ver, "");
                 }
             }
         }
@@ -252,7 +253,33 @@ pub fn free_space(cfg: &Config) -> Option<u64> {
 }
 
 fn run_scriptlet(cfg: &Config, o: &Outcome) {
-    let script = match &o.script {
+    let hook = if o.upgrade {
+        "post_upgrade"
+    } else {
+        "post_install"
+    };
+    run_hook(
+        cfg,
+        &o.name,
+        o.script.as_deref(),
+        hook,
+        &o.version,
+        o.old_version.as_deref().unwrap_or(""),
+    );
+}
+
+/// Run one .INSTALL hook function (pre/post_install/upgrade). No-op when the
+/// package has no scriptlet, the function isn't defined, or BPM_NO_SCRIPTLETS
+/// is set. The script is sourced in the (possibly chrooted) target root.
+fn run_hook(
+    cfg: &Config,
+    name: &str,
+    script: Option<&str>,
+    hook: &str,
+    version: &str,
+    old_version: &str,
+) {
+    let script = match script {
         Some(s) => s,
         None => return,
     };
@@ -263,17 +290,10 @@ fn run_scriptlet(cfg: &Config, o: &Outcome) {
     if fs::write(&tmp, script).is_err() {
         return;
     }
-    let hook = if o.upgrade {
-        "post_upgrade"
-    } else {
-        "post_install"
-    };
     let cmd = format!(
-        ". /.bpm-scriptlet 2>/dev/null; type {hook} >/dev/null 2>&1 && {hook} '{}' '{}'",
-        o.version,
-        o.old_version.as_deref().unwrap_or("")
+        ". /.bpm-scriptlet 2>/dev/null; type {hook} >/dev/null 2>&1 && {hook} '{version}' '{old_version}'",
     );
-    println!(":: running {hook} scriptlet for {}", o.name);
+    println!(":: running {hook} scriptlet for {name}");
     run_root_sh(cfg, &cmd);
     let _ = fs::remove_file(&tmp);
 }

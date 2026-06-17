@@ -30,6 +30,15 @@ mkdir -p "$BOOT/grub"
         "$cryptarg" "$rootspec"
     [ -f "$BOOT/initramfs.cpio.zst" ] && printf '    initrd /initramfs.cpio.zst\n'
     printf '}\n'
+    # Fallback: the previous kernel, stashed by the linux package's pre_upgrade
+    # hook. Same initramfs (no kernel modules), so it boots the old kernel too.
+    if [ -f "$BOOT/vmlinuz.old" ]; then
+        printf "menuentry 'Blueberry Linux (fallback \xe2\x80\x94 previous kernel)' {\n"
+        printf '    linux /vmlinuz.old %sroot=%s rw console=tty0 console=ttyS0,115200\n' \
+            "$cryptarg" "$rootspec"
+        [ -f "$BOOT/initramfs.cpio.zst" ] && printf '    initrd /initramfs.cpio.zst\n'
+        printf '}\n'
+    fi
 } > "$CFG"
 
 echo "grub-mkconfig: wrote $CFG (root=$rootspec)"
