@@ -6,7 +6,7 @@
 # grub.cfg. The .INSTALL hook handles the latter via blueberry-grub-mkconfig.
 pkgname=linux
 pkgver=7.0
-pkgrel=2
+pkgrel=3
 pkgdesc='The Blueberry Linux kernel (monolithic, no modules)'
 arch=('x86_64')
 url='https://www.kernel.org/'

@@ -44,6 +44,19 @@ echo "OPTIONS+=(!debug)" >> /etc/makepkg.conf
 SDE=1767225600
 useradd -m builder; echo "builder ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/builder
 cp -a /repo /tmp/b; chown -R builder /tmp/b /out
+# Stub packages for Blueberry libraries the Arch container provides under a
+# different name, so makepkg -s does not fail trying to pacman-install the
+# Blueberry name. The real shared object is already present in the container
+# (eudev -> libudev.so.1 from systemd-libs); the stub only satisfies the
+# dependency *name* during the build.
+mkdir -p /tmp/stub && cd /tmp/stub
+for s in eudev; do
+    printf "pkgname=%s\npkgver=1\npkgrel=1\narch=(any)\npackage(){ :; }\n" "$s" > PKGBUILD
+    chown -R builder /tmp/stub
+    su builder -c "cd /tmp/stub && makepkg -f --noconfirm" >/dev/null 2>&1
+    pacman -U --noconfirm /tmp/stub/$s-*.pkg.tar.zst >/dev/null 2>&1
+done
+cd /tmp/b
 fail=""
 for p in '"$need"'; do
     # Drop any older build of this package so the output dir holds exactly one

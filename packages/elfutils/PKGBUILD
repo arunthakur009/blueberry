@@ -9,7 +9,9 @@ pkgdesc='Libraries and tools for ELF and DWARF (libelf, libdw, libdebuginfod)'
 arch=('x86_64')
 url='https://sourceware.org/elfutils/'
 license=('GPL-3.0-or-later')
-depends=('glibc' 'zlib' 'bzip2' 'xz' 'zstd' 'curl')
+# json-c: libdebuginfod.so links it. We ship libraries only (libelf, libdw,
+# libdebuginfod) — the eu-* tools are dropped, so libarchive isn't needed.
+depends=('glibc' 'zlib' 'bzip2' 'xz' 'zstd' 'curl' 'json-c')
 makedepends=('pkgconf')
 # elfutils + LTO trips gcc 16's -Werror=null-dereference during ltrans (and the
 # release has no --disable-werror knob), so build without LTO.
@@ -33,6 +35,10 @@ build() {
 package() {
   cd "$pkgname-$pkgver"
   make DESTDIR="$pkgdir" install
-  rm -f "$pkgdir"/usr/lib/*.a   # drop static archives
+  rm -f "$pkgdir"/usr/lib/*.a            # drop static archives
+  # Ship the libraries only — strace/binutils need libdw + libdebuginfod, not
+  # the eu-* command-line tools (binutils already provides readelf/nm/...). This
+  # also drops the libarchive dependency (only eu-srcfiles used it).
+  rm -rf "$pkgdir"/usr/bin
   install -Dm644 COPYING-GPLV2 "$pkgdir/usr/share/licenses/$pkgname/COPYING-GPLV2"
 }
