@@ -44,7 +44,10 @@ BASE_PKGS   ?= ncurses bash
 #              rootfs (STAGEDIR) changes. The systemd runtime closure below is
 #              baked into the base image so PID 1 has everything it needs.
 INIT ?= runit
-SYSTEMD_BASE_PKGS := systemd util-linux libseccomp kmod dbus acl xz zstd lz4 \
+# xz/zstd/lz4 are not standalone packages — their libs (liblzma/libzstd/liblz4)
+# are bundled into the base image from the host (see etc/bpm/provided) and pulled
+# into the rootfs via systemd's ldd closure in bundle-glibc.
+SYSTEMD_BASE_PKGS := systemd util-linux libseccomp kmod dbus acl \
                      cryptsetup libcap libcap-ng readline file zlib bzip2 expat \
                      attr device-mapper json-c openssl popt openssh
 ifeq ($(INIT),systemd)
