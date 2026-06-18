@@ -77,10 +77,16 @@ cmdline (used by the QEMU end-to-end test).
 
 `bpm update && bpm install <pkg>` pulls from the configured repo
 (`/etc/bpm/repos.conf`). Every package is verified against the SHA-256 recorded
-in the repo index, and the index is fetched over TLS (no index signing).
-Recipes live in [packages/](packages/); host the repo yourself with
+in the repo index, the index itself is signed with ed25519 (`bpm.index.sig`,
+verified against the public key baked into bpm), and everything is fetched over
+TLS. Recipes live in [packages/](packages/); host the repo yourself with
 `tools/mkrepo.sh`, `tools/blueberry-repo-sync.sh`, or the one-command
 `tools/blueberry-build-server.sh` (see [doc/BPM.md](doc/BPM.md)).
+
+To let others **submit** recipes, run the [recipe-hub/](recipe-hub/) — a small,
+self-hostable web app (single Docker image, SQLite, accounts + admin approval)
+that collects `PKGBUILD` submissions and writes approved ones out for the build
+pipeline.
 
 ---
 
@@ -94,12 +100,14 @@ src/
   kernel/           Linux 7.0 config, patches, Makefile
   busybox/          busybox config + Makefile (dynamic glibc)
   init/             runit stage scripts + service dirs (disk-boot path)
+  systemd/          systemd integration layer (INIT=systemd: units, networkd, sshd)
   dropbear/         Dropbear SSH build rules
   initramfs/        /init live-CLI script, selftest, profile, udhcpc, Makefile
   bpm-rs/           Native package manager (Rust): streaming installs, SHA-256
   installer/        blueberry-install — guided GPT/UEFI disk installer (C)
 
 packages/           bpm package recipes (PKGBUILD format)
+recipe-hub/         Self-hostable web app for community PKGBUILD submissions
 etc/                /etc skeleton (hostname, fstab, sysctl, accounts, bpm config)
 tools/              Host-only scripts: qemu.sh, mkiso.sh, mkdisk.sh, build-pkgs.sh,
                     mkrepo.sh, blueberry-repo-sync.sh, blueberry-build-server.sh
