@@ -161,6 +161,26 @@ xorriso. Output: `blueberry-YYYYMMDD-x86_64.iso`.
 
 ---
 
+## Init system (`INIT=runit` | `INIT=systemd`)
+
+The **installed disk system** can run either init; the live initramfs is always
+busybox-based. Select at build time and carry the same flag through `install`
+and `iso`:
+
+```sh
+make iso              # INIT=runit   (default) busybox + runit + dropbear
+make iso INIT=systemd # full systemd PID 1 + OpenSSH on the installed rootfs
+```
+
+`INIT=systemd` bakes the systemd runtime closure (systemd 256.7, util-linux,
+dbus, kmod, libseccomp, cryptsetup, OpenSSH, …) into the base image, installs
+the `src/systemd/` integration layer (networkd/resolved/timesyncd, sshd units,
+`multi-user.target`), and points `/sbin/init` at `/usr/lib/systemd/systemd`. The
+initramfs execs `/sbin/init`, so the same kernel + initramfs boot either image.
+See [SYSTEMD-MIGRATION.md](SYSTEMD-MIGRATION.md) for the full design.
+
+---
+
 ## Build Variables
 
 Override any variable on the command line:
@@ -176,6 +196,7 @@ make test TIMEOUT=180
 | `ARCH` | `x86_64` | Target architecture (x86_64 only) |
 | `JOBS` | `nproc` | Parallel build jobs |
 | `DESTDIR` | `../blueberry-build/rootfs` | Install root |
+| `INIT` | `runit` | Installed-system init: `runit` or `systemd` |
 | `OBJDIR` | `../blueberry-build` | All build artefacts |
 | `LINUX_VERSION` | `7.0` | Linux kernel version |
 | `BUSYBOX_VERSION` | `1.36.1` | busybox version |
