@@ -58,6 +58,12 @@ all:
 	          $(STAGEDIR)/etc/systemd/system/sysinit.target.wants \
 	          $(STAGEDIR)/etc/systemd/system/getty.target.wants \
 	          $(STAGEDIR)/etc/systemd/system/network-online.target.wants
+	@# dbus system bus (logind + systemd D-Bus API need it). dbus.service is
+	@# socket-activated and also pulled into multi-user as the canonical bus.
+	@ln -sf $(SYSTEMD_UNITDIR)/dbus.socket \
+	    $(STAGEDIR)/etc/systemd/system/sockets.target.wants/dbus.socket
+	@ln -sf $(SYSTEMD_UNITDIR)/dbus.service \
+	    $(STAGEDIR)/etc/systemd/system/multi-user.target.wants/dbus.service
 	@# networkd (+ socket, wait-online, dbus alias)
 	@ln -sf $(SYSTEMD_UNITDIR)/systemd-networkd.service \
 	    $(STAGEDIR)/etc/systemd/system/multi-user.target.wants/systemd-networkd.service

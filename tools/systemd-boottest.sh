@@ -19,6 +19,48 @@ if [ "${REBUILD:-1}" = 1 ]; then
 fi
 
 R=$BD/rootfs
+
+if [ "${SELFTEST:-0}" = 1 ]; then
+    step "inject functional self-test (systemctl/networkd/journald/dbus + bpm)"
+    install -Dm755 /dev/stdin "$R/usr/local/bin/blueberry-selftest.sh" <<'EOS'
+#!/bin/sh
+exec >/dev/console 2>&1
+echo "==SYSTEMD_SELFTEST_START=="
+echo "[is-system-running] $(systemctl is-system-running 2>&1)"
+for u in systemd-journald dbus systemd-logind systemd-networkd systemd-resolved systemd-timesyncd sshd; do
+    echo "[active:$u] $(systemctl is-active $u.service 2>&1)"
+done
+echo "[failed-units]"; systemctl --failed --no-legend --plain 2>&1 | sed 's/^/   /'
+echo "[messagebus-user] $(getent passwd messagebus 2>&1 || grep messagebus /etc/passwd 2>&1 || echo MISSING)"
+echo "[dbus-status]"; systemctl status dbus.service --no-pager -l 2>&1 | sed -n '1,8p' | sed 's/^/   /'
+echo "[dbus-journal]"; journalctl -u dbus.service -b --no-pager 2>&1 | tail -8 | sed 's/^/   /'
+echo "[ip-addr]"; ip addr show 2>&1 | grep -E 'inet |state ' | sed 's/^/   /'
+echo "[networkctl]"; networkctl status --no-pager 2>&1 | grep -iE 'State|Address|Gateway|DNS' | sed 's/^/   /'
+echo "[resolv.conf]"; cat /etc/resolv.conf 2>&1 | grep -v '^#' | sed 's/^/   /'
+echo "[dns-resolve] $(resolvectl query repo.mmzsigmond.me 2>&1 | head -1)"
+echo "[journal-lines] $(journalctl --no-pager 2>/dev/null | wc -l)"
+echo "[bpm-update]"; bpm update 2>&1 | tail -4 | sed 's/^/   /'
+echo "[bpm-install-htop]"; bpm install htop -y 2>&1 | tail -5 | sed 's/^/   /'
+echo "[htop-version] $(htop --version 2>&1 | head -1)"
+echo "==SYSTEMD_SELFTEST_END=="
+systemctl poweroff 2>/dev/null || { echo o >/proc/sysrq-trigger; }
+EOS
+    install -Dm644 /dev/stdin "$R/etc/systemd/system/blueberry-selftest.service" <<'EOS'
+[Unit]
+Description=Blueberry systemd self-test
+After=network-online.target multi-user.target
+Wants=network-online.target
+[Service]
+Type=oneshot
+StandardOutput=journal+console
+StandardError=journal+console
+ExecStart=/usr/local/bin/blueberry-selftest.sh
+EOS
+    mkdir -p "$R/etc/systemd/system/multi-user.target.wants"
+    ln -sf /etc/systemd/system/blueberry-selftest.service \
+        "$R/etc/systemd/system/multi-user.target.wants/blueberry-selftest.service"
+fi
+
 step "inject a single-partition test fstab (real installs get UUIDs from the installer)"
 cat > "$R/etc/fstab" <<EOF
 LABEL=blueberry-root  /     ext4   rw,relatime              0 1
