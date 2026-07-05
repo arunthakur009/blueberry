@@ -313,9 +313,12 @@ _do_install:
 	@# Native .bpm path (PKGBUILD/.pkg.tar.zst fully retired). Each .bpm is a zstd
 	@# tarball of ./usr… plus a .BPM manifest; build then extract into the rootfs.
 	@sh $(TOPDIR)/tools/build-bpm-pkg.sh $(OBJDIR)/bpm-out $(BASE_PKGS)
+	@# Extract each base package AND record it in the rootfs bpm DB, so the base
+	@# userland is bpm-tracked and `bpm upgrade` can pull security/version updates
+	@# for it (openssl, openssh, sudo, expat, …) — not just the kernel.
 	@for p in $(BASE_PKGS); do \
 	    f=$$(ls -t $(OBJDIR)/bpm-out/$$p-[0-9]*.bpm | head -1); \
-	    zstd -dcq "$$f" | tar -x -C $(STAGEDIR) --exclude .BPM 2>/dev/null; \
+	    sh $(TOPDIR)/tools/bpm-extract-record.sh "$$f" $(STAGEDIR); \
 	done
 	@# glibc: ALWAYS fetch the pinned, container-built package from the MIRROR —
 	@# never build it here or copy the build host's libc. Same rationale as the
@@ -324,6 +327,9 @@ _do_install:
 	@# the runtime from here (GLIBC_SYSROOT=$(STAGEDIR)).
 	@echo "[install] fetching glibc from mirror"
 	@sh $(TOPDIR)/tools/fetch-bpm.sh glibc $(STAGEDIR) $(OBJDIR)/bpm-cache
+	@# Record glibc in the bpm DB too (fetch-bpm already extracted it).
+	@sh $(TOPDIR)/tools/bpm-extract-record.sh \
+	    $$(ls -t $(OBJDIR)/bpm-cache/glibc-[0-9]*.bpm | head -1) $(STAGEDIR) --record-only
 	@# trim dev cruft (headers, static libs, info, pkgconfig). Keep /usr/share/man:
 	@# mandoc + man-pages are in the base so `man`/apropos work on the server.
 	@rm -rf $(STAGEDIR)/usr/include \

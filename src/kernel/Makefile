@@ -20,10 +20,14 @@ KARCH   := $(ARCH)
 
 all: _patch _configure
 	@echo "[kernel] make -j$(JOBS)"
+	@# LOCALVERSION is set EMPTY on purpose: the suffix comes solely from
+	@# CONFIG_LOCALVERSION="-blueberry" in the config. Passing $(KERNEL_LOCALVERSION)
+	@# here too would double it (uname -r = 7.1.3-blueberry-blueberry). Empty (not
+	@# unset) also suppresses the kernel's "+" scm-dirty auto-suffix.
 	@$(MAKE) -C $(LINUX_SRC) \
 	    ARCH=$(KARCH) \
 	    CROSS_COMPILE=$(CROSS_COMPILE) \
-	    LOCALVERSION=$(KERNEL_LOCALVERSION) \
+	    LOCALVERSION= \
 	    -j$(JOBS)
 	@echo "[kernel] installing bzImage"
 	@install -Dm644 \
