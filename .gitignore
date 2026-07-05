@@ -22,3 +22,4 @@ serial.log
 
 # KDE Dolphin folder metadata
 .directory
+obj/

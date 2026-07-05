@@ -1,0 +1,66 @@
+[package]
+name     = "mariadb"
+version  = "11.4.4"
+release  = 1
+summary  = "Fast, robust SQL database server (MySQL-compatible)"
+homepage = "https://mariadb.org/"
+license  = ["GPL-2.0-only", "LGPL-2.1-or-later"]
+arch     = ["x86_64"]
+
+depends     = ["glibc", "gcc-libs", "openssl", "ncurses", "zlib", "zstd", "lz4", "pcre2", "libaio", "liburcu", "bzip2", "xz", "systemd"]
+makedepends = ["cmake", "bison", "pkgconf"]
+
+[[source]]
+url    = "https://archive.mariadb.org/mariadb-11.4.4/source/mariadb-11.4.4.tar.gz"
+sha256 = "96fbd2e6e93fb7e8b373eea75d85b6fea57c0e111a02090cbbefed52599dc77b"
+
+[steps]
+build = '''
+cd "$name-$version";
+# GCC 16 dropped the `evex512` target-attribute argument (AVX-512F now implies
+# 512-bit); strip it from the crc32c hardware path's target string.
+sed -i 's/evex512,//g; s/,evex512//g' mysys/crc32/crc32c_x86.cc;
+cmake -S . -B build \
+  -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
+  -DMYSQL_MAINTAINER_MODE=OFF \
+  -DCMAKE_C_FLAGS="-fpermissive -Wno-error" -DCMAKE_CXX_FLAGS="-fpermissive -Wno-error" \
+  -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr \
+  -DSYSCONFDIR=/etc -DSYSCONF2DIR=/etc/my.cnf.d \
+  -DMYSQL_DATADIR=/var/lib/mysql -DMYSQL_UNIX_ADDR=/run/mysqld/mysqld.sock \
+  -DDEFAULT_CHARSET=utf8mb4 -DDEFAULT_COLLATION=utf8mb4_general_ci \
+  -DENABLED_LOCAL_INFILE=ON -DWITH_SYSTEMD=yes -DSYSTEMD_UNIT_DIR=/usr/lib/systemd/system \
+  -DWITH_SSL=system -DWITH_ZLIB=system -DWITH_PCRE=system \
+  -DWITH_LIBWRAP=OFF -DWITH_UNIT_TESTS=OFF -DSKIP_TESTS=ON \
+  -DPLUGIN_MROONGA=NO -DPLUGIN_ROCKSDB=NO -DPLUGIN_SPIDER=NO \
+  -DPLUGIN_OQGRAPH=NO -DPLUGIN_TOKUDB=NO -DPLUGIN_COLUMNSTORE=NO \
+  -DPLUGIN_CONNECT=NO -DPLUGIN_SPHINX=NO -DPLUGIN_S3=NO -DPLUGIN_AUTH_GSSAPI=NO \
+  -DINSTALL_MYSQLTESTDIR= -DINSTALL_SQLBENCHDIR=;
+make -C build
+'''
+package = '''
+cd "$name-$version";
+make -C build DESTDIR="$pkgdir" install;
+# drop the test/benchmark trees if they slipped in
+rm -rf "$pkgdir/usr/mysql-test" "$pkgdir/usr/sql-bench" "$pkgdir/usr/share/mysql/mysql-test";
+# MariaDB drops units into the real unit dir only when its own libsystemd probe
+# fires; here they land in usr/support-files/systemd/ as a fallback. mariadbd
+# links libsystemd and the unit is Type=notify, so relocate them to the standard
+# location and remove the support-files staging tree.
+if [ -d "$pkgdir/usr/support-files/systemd" ]; then
+  for u in "$pkgdir"/usr/support-files/systemd/*.service "$pkgdir"/usr/support-files/systemd/*.socket; do
+    [ -e "$u" ] && install -Dm644 "$u" "$pkgdir/usr/lib/systemd/system/$(basename "$u")";
+  done;
+  rm -rf "$pkgdir/usr/support-files";
+fi;
+install -Dm644 /dev/stdin "$pkgdir/usr/lib/sysusers.d/mariadb.conf" <<'SYSU'
+u mysql - "MariaDB server" /var/lib/mysql
+SYSU
+install -Dm644 /dev/stdin "$pkgdir/usr/lib/tmpfiles.d/mariadb.conf" <<'TMPF'
+d /var/lib/mysql 0700 mysql mysql -
+d /run/mysqld 0755 mysql mysql -
+TMPF
+install -Dm644 /dev/stdin "$pkgdir/usr/share/licenses/$name/README" <<'LIC'
+MariaDB is distributed under GPL-2.0-only (server) and LGPL-2.1-or-later
+(client libraries). See https://mariadb.com/kb/en/licensing-faq/.
+LIC
+'''
