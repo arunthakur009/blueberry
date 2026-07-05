@@ -1,0 +1,34 @@
+[package]
+name     = "fzf"
+version  = "0.57.0"
+release  = 1
+summary  = "A command-line fuzzy finder"
+homepage = "https://github.com/junegunn/fzf"
+license  = ["MIT"]
+arch     = ["x86_64"]
+
+depends     = ["glibc"]
+makedepends = ["go", "git"]
+
+[[source]]
+url    = "https://github.com/junegunn/fzf/archive/v0.57.0/fzf-0.57.0.tar.gz"
+sha256 = "d4e8e25fad2d3f75943b403c40b61326db74b705bf629c279978fdd0ceb1f97c"
+
+[steps]
+build = '''
+cd "$name-$version";
+export GOPATH="$srcdir/gopath" GOCACHE="$srcdir/gocache" GOFLAGS="-mod=mod" CGO_ENABLED=0;
+go build -ldflags "-s -w -X main.version=0.57.0 -X main.revision=tarball" -o fzf .
+'''
+package = '''
+cd "$name-$version";
+install -Dm755 fzf "$pkgdir/usr/bin/fzf";
+install -Dm755 bin/fzf-tmux "$pkgdir/usr/bin/fzf-tmux";
+install -Dm644 man/man1/fzf.1 "$pkgdir/usr/share/man/man1/fzf.1";
+install -Dm644 man/man1/fzf-tmux.1 "$pkgdir/usr/share/man/man1/fzf-tmux.1";
+install -Dm644 shell/completion.bash "$pkgdir/usr/share/fzf/completion.bash";
+install -Dm644 shell/key-bindings.bash "$pkgdir/usr/share/fzf/key-bindings.bash";
+install -Dm644 shell/completion.zsh "$pkgdir/usr/share/fzf/completion.zsh";
+install -Dm644 shell/key-bindings.zsh "$pkgdir/usr/share/fzf/key-bindings.zsh";
+install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$name/LICENSE"
+'''

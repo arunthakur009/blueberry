@@ -1,0 +1,26 @@
+[package]
+name     = "iotop"
+version  = "1.27"
+release  = 1
+summary  = "Monitor per-process I/O usage in real time (iotop-c, ncurses UI)"
+homepage = "https://github.com/Tomas-M/iotop"
+license  = ["GPL-2.0-or-later"]
+arch     = ["x86_64"]
+
+depends     = ["glibc", "ncurses"]
+makedepends = ["pkgconf"]
+
+[[source]]
+url    = "https://github.com/Tomas-M/iotop/archive/v1.27/iotop-1.27.tar.gz"
+sha256 = "ca643a9d11fb398158decd2094dcf74c3e4625d06c54300073a69f1e92c721ea"
+
+[steps]
+build = '''
+cd "$name-$version";
+make
+'''
+package = '''
+cd "$name-$version";
+make DESTDIR="$pkgdir" install;
+install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$name/LICENSE"
+'''

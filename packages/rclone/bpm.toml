@@ -1,0 +1,33 @@
+[package]
+name     = "rclone"
+version  = "1.68.2"
+release  = 1
+summary  = "Sync files and directories to and from major cloud storage providers"
+homepage = "https://rclone.org/"
+license  = ["MIT"]
+arch     = ["x86_64"]
+
+depends     = ["glibc"]
+makedepends = ["go", "git"]
+
+[[source]]
+url    = "https://github.com/rclone/rclone/archive/v1.68.2/rclone-1.68.2.tar.gz"
+sha256 = "6c4c1a1702633c7a8f8755a9cfb951c3ae0b7bcc2e210b92e191250b6aae2e9f"
+
+[steps]
+build = '''
+cd "$name-$version";
+export GOPATH="$srcdir/gopath" GOCACHE="$srcdir/gocache" GOFLAGS="-mod=mod" CGO_ENABLED=0;
+go build -tags noselfupdate -trimpath \
+  -ldflags "-s -w -X github.com/rclone/rclone/fs.Version=v1.68.2" -o rclone .;
+./rclone genautocomplete bash rclone.bash || true;
+./rclone genautocomplete zsh rclone.zsh || true;
+mkdir -p man; ./rclone --help >/dev/null 2>&1 || true
+'''
+package = '''
+cd "$name-$version";
+install -Dm755 rclone "$pkgdir/usr/bin/rclone";
+[ -f rclone.bash ] && install -Dm644 rclone.bash "$pkgdir/usr/share/bash-completion/completions/rclone";
+[ -f rclone.zsh ] && install -Dm644 rclone.zsh "$pkgdir/usr/share/zsh/site-functions/_rclone";
+install -Dm644 COPYING "$pkgdir/usr/share/licenses/$name/COPYING"
+'''

@@ -1,0 +1,29 @@
+[package]
+name     = "p7zip"
+version  = "17.05"
+release  = 1
+summary  = "Command-line port of 7-Zip, a file archiver with a high compression ratio"
+homepage = "https://github.com/p7zip-project/p7zip"
+license  = ["LGPL-2.1-or-later", "custom:unRAR"]
+arch     = ["x86_64"]
+
+depends     = ["glibc", "gcc-libs"]
+makedepends = []
+
+[[source]]
+url    = "https://github.com/p7zip-project/p7zip/archive/v17.05/p7zip-17.05.tar.gz"
+sha256 = "d2788f892571058c08d27095c22154579dfefb807ebe357d145ab2ddddefb1a6"
+
+[steps]
+build = '''
+cd "$name-$version";
+cp makefile.linux_amd64 makefile.machine;
+make all3
+'''
+package = '''
+cd "$name-$version";
+# install.sh args: <bindir> <sharedir> <mandir> <docdir> <destdir>
+sh install.sh /usr/bin /usr/lib/p7zip /usr/share/man /usr/share/doc/p7zip "$pkgdir";
+install -Dm644 DOC/License.txt "$pkgdir/usr/share/licenses/$name/License.txt";
+install -Dm644 DOC/unRarLicense.txt "$pkgdir/usr/share/licenses/$name/unRarLicense.txt"
+'''
