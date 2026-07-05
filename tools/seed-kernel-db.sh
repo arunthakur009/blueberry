@@ -1,0 +1,45 @@
+#!/bin/sh
+# seed-kernel-db.sh — register the pinned kernel as an installed bpm package in
+# the rootfs, so `bpm upgrade` on the running system can later pull a newer linux
+# .bpm from the repo and install it. The kernel ships as a prebuilt artifact (it
+# is NOT built per image — see tools/fetch-kernel.sh), so bpm would otherwise not
+# know it is installed and would never offer to upgrade it.
+#
+# Writes the bpm local-db entry (var/lib/bpm/db/linux/{desc,files}, the same
+# .PKGINFO shape bpm records on a normal install) and stages the kernel's helper
+# scripts (blueberry-grub-mkconfig, blueberry-kernel-hook) into /usr/bin so the
+# post_upgrade scriptlet of a future kernel .bpm can run. Version/release are read
+# from packages/linux/bpm.toml so the seed always matches the published package.
+#
+# Usage: seed-kernel-db.sh <stagedir>
+set -eu
+STAGE=${1:?usage: seed-kernel-db.sh <stagedir>}
+TOP=$(cd "$(dirname "$0")/.." && pwd)
+REC="$TOP/packages/linux/bpm.toml"
+[ -f "$REC" ] || { echo "seed-kernel-db: no $REC" >&2; exit 1; }
+
+ver=$(awk -F'"' '/^version[[:space:]]*=/{print $2; exit}' "$REC")
+rel=$(awk -F'=' '/^release[[:space:]]*=/{gsub(/[^0-9]/,"",$2); print $2; exit}' "$REC")
+summary=$(awk -F'"' '/^summary[[:space:]]*=/{print $2; exit}' "$REC")
+[ -n "$ver" ] && [ -n "$rel" ] || { echo "seed-kernel-db: could not read version/release from $REC" >&2; exit 1; }
+
+DB="$STAGE/var/lib/bpm/db/linux"
+mkdir -p "$DB"
+{
+    printf 'pkgname = linux\n'
+    printf 'pkgver = %s-%s\n' "$ver" "$rel"
+    printf 'pkgdesc = %s\n' "$summary"
+} > "$DB/desc"
+# NOTE: deliberately do NOT list boot/vmlinuz here. It is managed by
+# blueberry-kernel-hook (a promoted copy of the newest versioned kernel), not
+# owned by the package — so bpm must not delete it on upgrade, otherwise the
+# running kernel would vanish before the hook can stash it as vmlinuz.old.
+{
+    printf 'usr/bin/blueberry-grub-mkconfig\n'
+    printf 'usr/bin/blueberry-kernel-hook\n'
+} > "$DB/files"
+
+install -Dm755 "$TOP/packages/linux/blueberry-grub-mkconfig" "$STAGE/usr/bin/blueberry-grub-mkconfig"
+install -Dm755 "$TOP/packages/linux/blueberry-kernel-hook"    "$STAGE/usr/bin/blueberry-kernel-hook"
+
+echo "[seed-kernel-db] registered linux $ver-$rel (bpm upgrade will track the kernel)"

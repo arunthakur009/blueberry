@@ -329,6 +329,10 @@ _do_install:
 	@rm -rf $(STAGEDIR)/usr/include \
 	        $(STAGEDIR)/usr/share/info $(STAGEDIR)/usr/lib/pkgconfig
 	@find $(STAGEDIR)/usr/lib -name '*.a' -delete 2>/dev/null || true
+	@# Register the pinned kernel as an installed bpm package so `bpm upgrade`
+	@# can pull + install a newer linux .bpm from the repo (the kernel is a
+	@# prebuilt artifact, not a base package, so bpm otherwise can't see it).
+	@sh $(TOPDIR)/tools/seed-kernel-db.sh $(STAGEDIR)
 	@# Init-system integration on the installed rootfs.
 ifeq ($(INIT),systemd)
 	@echo "[install] INIT=systemd — installing systemd integration layer"

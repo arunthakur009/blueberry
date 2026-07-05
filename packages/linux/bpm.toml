@@ -1,7 +1,7 @@
 [package]
 name     = "linux"
 version  = "7.1.3"
-release  = 1
+release  = 2
 summary  = "The Blueberry Linux kernel (monolithic, no modules)"
 homepage = "https://www.kernel.org/"
 license  = ["GPL-2.0-only"]
@@ -21,10 +21,22 @@ cp "$startdir/../../src/kernel/config" .config;
 make olddefconfig;
 make -j"$(nproc)" bzImage
 '''
+# Ship the kernel ONLY as a versioned file — NOT the bare /boot/vmlinuz. The
+# post-install/upgrade hook (blueberry-kernel-hook) promotes the newest versioned
+# kernel to /boot/vmlinuz, first stashing the previous /boot/vmlinuz as
+# vmlinuz.old for a fallback boot entry. If bpm wrote /boot/vmlinuz directly it
+# would clobber the running kernel before the hook could stash it.
 package = '''
 cd "linux-$version";
-install -Dm644 arch/x86/boot/bzImage "$pkgdir/boot/vmlinuz";
 install -Dm644 arch/x86/boot/bzImage "$pkgdir/boot/vmlinuz-$version-blueberry";
 install -Dm644 System.map "$pkgdir/boot/System.map-$version-blueberry";
-install -Dm755 "$startdir/blueberry-grub-mkconfig" "$pkgdir/usr/bin/blueberry-grub-mkconfig"
+install -Dm755 "$startdir/blueberry-grub-mkconfig" "$pkgdir/usr/bin/blueberry-grub-mkconfig";
+install -Dm755 "$startdir/blueberry-kernel-hook" "$pkgdir/usr/bin/blueberry-kernel-hook"
 '''
+
+# On install and upgrade, promote the new kernel to /boot/vmlinuz (keeping the
+# previous one as a fallback) and regenerate grub.cfg. This is what makes
+# `bpm upgrade` pull and boot a newer kernel. See blueberry-kernel-hook.
+[scripts]
+post_install = "blueberry-kernel-hook"
+post_upgrade = "blueberry-kernel-hook"
