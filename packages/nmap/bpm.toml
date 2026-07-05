@@ -1,0 +1,34 @@
+[package]
+name     = "nmap"
+version  = "7.95"
+release  = 1
+summary  = "Network exploration tool and security / port scanner"
+homepage = "https://nmap.org/"
+license  = ["custom:nmap"]
+arch     = ["x86_64"]
+
+depends     = ["glibc", "gcc-libs", "openssl", "libpcap", "zlib"]
+makedepends = ["pkgconf"]
+
+[[source]]
+url    = "https://nmap.org/dist/nmap-7.95.tar.bz2"
+sha256 = "e14ab530e47b5afd88f1c8a2bac7f89cd8fe6b478e22d255c5b9bddb7a1c5778"
+
+[steps]
+build = '''
+cd "$name-$version";
+./configure --prefix=/usr --without-zenmap --without-ndiff \
+  --with-openssl --with-libpcap=/usr --with-libz=/usr \
+  --with-liblua=included --with-libpcre=included --with-libdnet=included;
+# The bundled libpcre ships generated autotools files, but the tarball's
+# timestamps make them look stale and trigger a regen that wants aclocal-1.16
+# (absent). Mark sources old and generated files fresh so make skips the regen.
+find . \( -name configure.ac -o -name configure.in -o -name '*.am' \) -exec touch -d '2000-01-01' {} +;
+find . \( -name aclocal.m4 -o -name configure -o -name 'Makefile.in' -o -name config.h.in \) -exec touch {} +;
+make
+'''
+package = '''
+cd "$name-$version";
+make DESTDIR="$pkgdir" install;
+install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$name/LICENSE"
+'''

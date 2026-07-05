@@ -17,7 +17,11 @@ sha256 = "9b8d1ecedd5b5e81fbf1918e876752a7dd948e05c1a0dba10ab863842d45acd5"
 [steps]
 build = '''
 cd "$name-$version";
-export CFLAGS="${CFLAGS:-} -Wno-error";
+# ncurses 6.5 ships boolcodes/numcodes/strcodes and the terminfo *names as real
+# (extern) symbols, but zsh 5.9's configure probe fails to detect them, so it
+# compiles its own local arrays that then clash with term.h. Tell zsh the
+# symbols exist (HAVE_*) so it uses ncurses' and skips the local fallbacks.
+export CFLAGS="${CFLAGS:-} -Wno-error -DHAVE_BOOLCODES -DHAVE_NUMCODES -DHAVE_STRCODES -DHAVE_BOOLNAMES -DHAVE_NUMNAMES -DHAVE_STRNAMES";
 ./configure --prefix=/usr --bindir=/usr/bin --sysconfdir=/etc/zsh --enable-etcdir=/etc/zsh \
   --enable-zshenv=/etc/zsh/zshenv --docdir=/usr/share/doc/zsh --enable-multibyte \
   --enable-function-subdirs --enable-fndir=/usr/share/zsh/functions --with-tcsetpgrp \
