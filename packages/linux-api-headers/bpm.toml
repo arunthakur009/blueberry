@@ -1,8 +1,8 @@
 [package]
 name     = "linux-api-headers"
-version  = "7.0"
+version  = "6.18.38"
 release  = 1
-summary  = "Sanitized kernel headers for userspace (UAPI), matching Linux 7.0"
+summary  = "Sanitized kernel headers for userspace (UAPI), matching Linux 6.18 LTS"
 homepage = "https://www.kernel.org/"
 license  = ["GPL-2.0-only WITH Linux-syscall-note"]
 arch     = ["x86_64"]
@@ -11,8 +11,8 @@ makedepends = ["rsync"]
 provides    = ["linux-headers"]
 
 [[source]]
-url    = "https://cdn.kernel.org/pub/linux/kernel/v7.x/linux-7.0.tar.xz"
-sha256 = "bb7f6d80b387c757b7d14bb93028fcb90f793c5c0d367736ee815a100b3891f0"
+url    = "https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-6.18.38.tar.xz"
+sha256 = "ac26e508abd56e9f8b89872b6e10c49fc823bcc70d8068a5d8504c1a7c4ff045"
 
 [steps]
 build = '''
