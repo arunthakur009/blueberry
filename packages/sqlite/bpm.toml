@@ -1,7 +1,7 @@
 [package]
 name     = "sqlite"
-version  = "3.49.1"
-release  = 2
+version  = "3.53.3"
+release  = 1
 summary  = "Self-contained, serverless, zero-configuration SQL database engine"
 homepage = "https://sqlite.org/"
 license  = ["blessing"]
@@ -11,18 +11,18 @@ depends     = ["glibc", "zlib", "readline"]
 provides    = ["libsqlite3.so"]
 
 [[source]]
-url    = "https://sqlite.org/2025/sqlite-autoconf-3490100.tar.gz"
-sha256 = "106642d8ccb36c5f7323b64e4152e9b719f7c0215acf5bfeac3d5e7f97b59254"
+url    = "https://sqlite.org/2026/sqlite-autoconf-3530300.tar.gz"
+sha256 = "c917d7db16648ec95f714974ace5e5dcf46b7dc70e26600a0a102a3141125db0"
 
 [steps]
 build = '''
-_srcver=3490100;
+_srcver=3530300;
 cd "sqlite-autoconf-$_srcver";
 ./configure --prefix=/usr --disable-static CPPFLAGS="-DSQLITE_ENABLE_FTS5 -DSQLITE_ENABLE_RTREE -DSQLITE_ENABLE_COLUMN_METADATA";
 make
 '''
 package = '''
-_srcver=3490100;
+_srcver=3530300;
 cd "sqlite-autoconf-$_srcver";
 make DESTDIR="$pkgdir" install
 '''

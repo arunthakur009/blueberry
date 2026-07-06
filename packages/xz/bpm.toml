@@ -1,6 +1,6 @@
 [package]
 name     = "xz"
-version  = "5.6.3"
+version  = "5.8.3"
 release  = 1
 summary  = "XZ / LZMA compression CLI utilities (xz, unxz, xzcat, lzma)"
 homepage = "https://tukaani.org/xz/"
@@ -14,8 +14,8 @@ makedepends = ["make", "gcc"]
 provides    = ["xz", "liblzma.so"]
 
 [[source]]
-url    = "https://github.com/tukaani-project/xz/releases/download/v5.6.3/xz-5.6.3.tar.xz"
-sha256 = "db0590629b6f0fa36e74aea5f9731dc6f8df068ce7b7bafa45301832a5eebc3a"
+url    = "https://github.com/tukaani-project/xz/releases/download/v5.8.3/xz-5.8.3.tar.xz"
+sha256 = "fff1ffcf2b0da84d308a14de513a1aa23d4e9aa3464d17e64b9714bfdd0bbfb6"
 
 [steps]
 build = '''
