@@ -500,8 +500,9 @@ help:
 	@echo "  test           Boot headless, run self-tests, assert BLUEBERRY_TEST=PASS"
 	@echo "  run-server     Boot the Server ISO in a QEMU window"
 	@echo "  test-server    Boot the Server ISO headless, assert multi-user.target"
-	@echo "  test-install   Unattended install in QEMU, then boot the installed disk"
-	@echo "  test-e2e       Full smoke test: build + both ISOs + boot + install + boot"
+	@echo "  test-bpm       Fast bpm unit tests (install/upgrade/config/remove; no QEMU)"
+	@echo "  test-install   Unattended install in QEMU, boot the disk, assert service health"
+	@echo "  test-e2e       Full smoke test: bpm tests + both ISOs + boot + install + boot"
 	@echo ""
 	@echo "Utility targets:"
 	@echo "  fetch          Download all upstream OS sources"
@@ -513,6 +514,13 @@ help:
 	@echo "  ARCH=$(ARCH)  JOBS=$(JOBS)  DESTDIR=$(DESTDIR)"
 	@echo "  LINUX_VERSION=$(LINUX_VERSION)  BUSYBOX_VERSION=$(BUSYBOX_VERSION)"
 	@echo "  CROSS_COMPILE=$(CROSS_COMPILE)"
+
+# Fast, self-contained test of the bpm package manager: install / upgrade /
+# config-preservation (.bpmnew) / remove, against a throwaway BPM_ROOT. No QEMU;
+# runs in seconds. The cheap gate to run before the expensive e2e QEMU steps.
+.PHONY: test-bpm
+test-bpm:
+	@sh $(TOPDIR)/tools/test/test-bpm.sh
 
 # Unattended install of the server ISO in QEMU, then boot the installed disk
 # and assert it reaches multi-user with a login prompt.
@@ -527,12 +535,14 @@ test-install:
 # build box before a release. Any step failing fails the whole target.
 .PHONY: test-e2e
 test-e2e:
-	@echo "[test-e2e] 1/4 build + install rootfs"
+	@echo "[test-e2e] 1/5 bpm package-manager unit tests"
+	@$(MAKE) test-bpm
+	@echo "[test-e2e] 2/5 build + install rootfs"
 	@$(MAKE) install
-	@echo "[test-e2e] 2/4 build ISOs"
+	@echo "[test-e2e] 3/5 build ISOs"
 	@$(MAKE) iso server-iso
-	@echo "[test-e2e] 3/4 boot the Server ISO"
+	@echo "[test-e2e] 4/5 boot the Server ISO"
 	@$(MAKE) test-server
-	@echo "[test-e2e] 4/4 unattended install + boot the installed disk"
+	@echo "[test-e2e] 5/5 unattended install + boot the installed disk (asserts service health)"
 	@$(MAKE) test-install
-	@echo "[test-e2e] PASS — Server ISO boots and an unattended install boots"
+	@echo "[test-e2e] PASS — bpm tests green, Server ISO boots, install boots with sshd+networkd up"

@@ -46,13 +46,37 @@ for i in $(seq 1 55); do
         RESULT=multiuser; break
     fi
 done
+# Let trailing unit-start lines (sshd, networkd) flush to the serial log before
+# we tear the VM down — multi-user.target prints as its wants are still settling.
+[ "${RESULT:-none}" = multiuser ] && sleep 6
 kill -9 $QP 2>/dev/null; wait 2>/dev/null
 
-case "${RESULT:-none}" in
-multiuser)
-    echo "[install-test] PASS — installed disk reached multi-user with a login prompt";;
-*)
+if [ "${RESULT:-none}" != multiuser ]; then
     echo "[install-test] FAIL — installed disk did not reach a ready target. Serial tail:"
     tail -25 "$BLOG" | sed 's/\x1b\[[0-9;]*m//g'
-    exit 1;;
-esac
+    exit 1
+fi
+echo "[install-test] reached multi-user — checking service health…"
+
+# strip ANSI once for the health greps
+CLEAN="$WORK/boot-clean.log"; sed 's/\x1b\[[0-9;]*m//g' "$BLOG" > "$CLEAN"
+
+# Hard fail on any unit that failed to start (systemd prints "Failed to start …").
+if grep -qaE "Failed to start|\[FAILED\]" "$CLEAN"; then
+    echo "[install-test] FAIL — a service failed to start on the installed system:"
+    grep -aE "Failed to start|\[FAILED\]" "$CLEAN" | head -8
+    exit 1
+fi
+
+# Positively confirm the two services the server image enables actually came up.
+miss=
+grep -qaE "Started OpenSSH server daemon|Reached target .*Login|sshd" "$CLEAN" || miss="$miss sshd"
+grep -qaE "Started Network Configuration|Reached target Network|systemd-networkd" "$CLEAN" || miss="$miss networkd"
+if [ -n "$miss" ]; then
+    echo "[install-test] FAIL — expected service(s) never started:$miss"
+    echo "  (serial log had no start marker; tail below)"
+    tail -25 "$CLEAN"
+    exit 1
+fi
+
+echo "[install-test] PASS — installed disk reached multi-user; sshd + networkd up, no failed units"
