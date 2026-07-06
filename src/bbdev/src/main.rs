@@ -213,7 +213,11 @@ fn cmd_build(root: &Path, names: &[String]) -> i32 {
         names.to_vec()
     };
     println!("bbdev: building {}: {}", targets.len(), targets.join(" "));
-    let mut argv = vec!["tools/pkg/build-bpm-pkg.sh".to_string(), OUT.to_string()];
+    // Pass an ABSOLUTE out-dir: build-bpm-pkg.sh bind-mounts it into the build
+    // container (podman -v "$OUT:/out"), and podman rejects a relative path as an
+    // invalid named-volume name.
+    let outdir = root.join(OUT).to_string_lossy().into_owned();
+    let mut argv = vec!["tools/pkg/build-bpm-pkg.sh".to_string(), outdir];
     argv.extend(targets);
     let sh_args: Vec<&str> = argv.iter().map(String::as_str).collect();
     run(root, "sh", &sh_args)
