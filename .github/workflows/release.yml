@@ -52,7 +52,7 @@ jobs:
           while read -r sum name; do
             [ -n "$name" ] || continue
             echo "fetching $name"
-            curl -fL --retry 3 -o "$name" "https://repo.mmzsigmond.me/isos/$name"
+            curl -fL --retry 3 -o "$name" "https://repo.blueberrylinux.org/isos/$name"
           done < ../release/isos.sha256
           sha256sum -c ../release/isos.sha256
 
