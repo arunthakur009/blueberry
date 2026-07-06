@@ -1,0 +1,26 @@
+[package]
+name     = "wireless-regdb"
+version  = "2026.05.30"
+release  = 1
+summary  = "Central regulatory domain database (regulatory.db) for cfg80211 wireless"
+homepage = "https://git.kernel.org/pub/scm/linux/kernel/git/wens/wireless-regdb.git"
+license  = ["custom:ISC"]
+arch     = ["any"]
+
+# The kernel's cfg80211 loads /usr/lib/firmware/regulatory.db at wifi bring-up;
+# without it wireless falls back to the restrictive world regulatory domain.
+depends = []
+
+[[source]]
+url    = "https://mirrors.edge.kernel.org/pub/software/network/wireless-regdb/wireless-regdb-2026.05.30.tar.xz"
+sha256 = "8a27bfc081bafed8c24dd70fab0d96f098e5a0bfcd08d3da672595f225ab8993"
+
+[steps]
+# Ships prebuilt, signed db files — nothing to compile.
+build = 'true'
+package = '''
+cd "$name-$version"
+install -Dm644 regulatory.db     "$pkgdir/usr/lib/firmware/regulatory.db"
+install -Dm644 regulatory.db.p7s "$pkgdir/usr/lib/firmware/regulatory.db.p7s"
+install -Dm644 LICENSE           "$pkgdir/usr/share/licenses/wireless-regdb/LICENSE"
+'''
