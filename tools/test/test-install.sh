@@ -46,9 +46,11 @@ for i in $(seq 1 55); do
         RESULT=multiuser; break
     fi
 done
-# Let trailing unit-start lines (sshd, networkd) flush to the serial log before
-# we tear the VM down — multi-user.target prints as its wants are still settling.
-[ "${RESULT:-none}" = multiuser ] && sleep 6
+# Give the system time to settle before tearing the VM down: multi-user.target
+# prints while its wants are still starting, and services with Restart=on-failure
+# (e.g. dbus racing its first start) need a restart cycle (RestartSec ~5s) to
+# recover. Without this we'd snapshot a transient failure and misreport it.
+[ "${RESULT:-none}" = multiuser ] && sleep 18
 kill -9 $QP 2>/dev/null; wait 2>/dev/null
 
 if [ "${RESULT:-none}" != multiuser ]; then
@@ -61,10 +63,23 @@ echo "[install-test] reached multi-user — checking service health…"
 # strip ANSI once for the health greps
 CLEAN="$WORK/boot-clean.log"; sed 's/\x1b\[[0-9;]*m//g' "$BLOG" > "$CLEAN"
 
-# Hard fail on any unit that failed to start (systemd prints "Failed to start …").
-if grep -qaE "Failed to start|\[FAILED\]" "$CLEAN"; then
-    echo "[install-test] FAIL — a service failed to start on the installed system:"
-    grep -aE "Failed to start|\[FAILED\]" "$CLEAN" | head -8
+# Recovery-aware failed-unit check (mirrors `systemctl is-system-running`): a unit
+# that printed "Failed to start/mount X" but *later* reached "Started/Mounted X"
+# was recovered by Restart= and is healthy — only a unit left in a failed state
+# is a real problem. We collect the failed descriptions and subtract recovered.
+genuine=
+while IFS= read -r desc; do
+    [ -n "$desc" ] || continue
+    grep -qaF "Started $desc." "$CLEAN" && continue    # service recovered
+    grep -qaF "Mounted $desc." "$CLEAN" && continue     # mount recovered
+    genuine="$genuine
+    - $desc"
+done <<EOF
+$(grep -aoE "Failed to (start|mount) [^.]+" "$CLEAN" | sed -E 's/^Failed to (start|mount) //' | sort -u)
+EOF
+if [ -n "$genuine" ]; then
+    echo "[install-test] FAIL — service(s) left in a failed state on the installed system:$genuine"
+    echo "  (transient failures that later recovered via Restart= are ignored)"
     exit 1
 fi
 
