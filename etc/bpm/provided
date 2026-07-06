@@ -4,16 +4,12 @@
 # #comments and blanks ignored. The built-in list in bpm's is_provided() (glibc,
 # gcc-libs, bash, coreutils, ...) is EXTENDED by this file.
 #
-# Only list things actually present. The base bundles the glibc runtime plus:
-#   libz.so.1      -> zlib
-#   libzstd.so.1   -> zstd
-#   liblzma.so.5   -> xz
-#   liblz4.so.1    -> lz4
-# and ships the CA bundle at /etc/ssl/certs/ca-certificates.crt -> ca-certificates.
+# xz / zstd / lz4 are now proper tracked base packages (they ship their own CLI +
+# liblzma/libzstd/liblz4), so they are NOT listed here anymore — bpm can upgrade
+# them. Only genuinely non-package bits remain:
+#   libz.so.1  -> zlib  (zlib is also a tracked base package; kept for safety)
+# and the CA bundle at /etc/ssl/certs/ca-certificates.crt -> ca-certificates.
 zlib
-zstd
-xz
-lz4
 ca-certificates
 # The systemd base package ships libsystemd.so.0 + libudev.so.1 into the rootfs,
 # so anything depending on systemd-libs (libgudev, libpulse, …) is satisfied.

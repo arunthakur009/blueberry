@@ -11,7 +11,7 @@ runtime, the `bpm` package manager, and the build system.
 Two things make a running system: `make world` assembles the bootable base
 image (kernel + initramfs + a systemd or runit rootfs), and the **package set**
 in [`packages/`](../packages) (~130 recipes) is built from source into one
-ed25519-signed mirror at `https://repo.mmzsigmond.me/`, installed by `bpm`.
+ed25519-signed mirror at `https://repo.blueberrylinux.org/`, installed by `bpm`.
 There is **no third-party binary mirror** at runtime.
 
 ```

@@ -174,7 +174,7 @@ Service accounts should have:
 
 **Do not open public issues for vulnerabilities.**
 
-Email `security@blueberry.mmzsigmond.me` with:
+Email `security@blueberrylinux.org` with:
 
 1. Affected component and version
 2. Description of the vulnerability

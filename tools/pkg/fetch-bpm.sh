@@ -13,13 +13,13 @@
 # canonical glibc .bpm from the mirror makes the initramfs host-independent.
 #
 # Usage: fetch-bpm.sh <pkgname> <destroot> [cachedir]
-# Env:   BPM_MIRROR (default https://repo.mmzsigmond.me)
+# Env:   BPM_MIRROR (default https://repo.blueberrylinux.org)
 set -eu
 
 PKG=${1:?usage: fetch-bpm.sh <pkgname> <destroot> [cachedir]}
 DEST=${2:?missing destroot}
 CACHE=${3:-${BPM_CACHE:-${TMPDIR:-/tmp}/blueberry-bpm-cache}}
-MIRROR=${BPM_MIRROR:-https://repo.mmzsigmond.me}
+MIRROR=${BPM_MIRROR:-https://repo.blueberrylinux.org}
 
 for t in curl zstd tar sha256sum awk; do
     command -v "$t" >/dev/null 2>&1 || { echo "fetch-bpm: need $t" >&2; exit 1; }

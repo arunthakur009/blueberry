@@ -1,0 +1,27 @@
+[package]
+name     = "lz4"
+version  = "1.10.0"
+release  = 1
+summary  = "LZ4 — extremely fast lossless compression (lz4 CLI + liblz4)"
+homepage = "https://lz4.org/"
+license  = ["BSD-2-Clause", "GPL-2.0-only"]
+arch     = ["x86_64"]
+
+depends     = ["glibc"]
+makedepends = ["make", "gcc"]
+provides    = ["lz4", "liblz4.so"]
+
+[[source]]
+url    = "https://github.com/lz4/lz4/releases/download/v1.10.0/lz4-1.10.0.tar.gz"
+sha256 = "537512904744b35e232912055ccf8ec66d768639ff3abe5788d90d792ec5f48b"
+
+[steps]
+build = '''
+cd "$name-$version"
+make -j"$(nproc)" PREFIX=/usr BUILD_STATIC=no
+'''
+package = '''
+cd "$name-$version"
+make PREFIX=/usr DESTDIR="$pkgdir" BUILD_STATIC=no install
+rm -f "$pkgdir"/usr/lib/*.a
+'''

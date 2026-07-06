@@ -331,7 +331,7 @@ all staged by `tools/image/bundle-glibc.sh` during the initramfs build and
 initramfs (`rm ../blueberry-build/.stamp-initramfs && make initramfs`) and
 confirm those paths are present. If the fetch itself failed (`fetch-bpm: … not
 found` / sha mismatch / network error), the mirror is unreachable or the pinned
-glibc is missing from it — check `https://repo.mmzsigmond.me/bpm.index`.
+glibc is missing from it — check `https://repo.blueberrylinux.org/bpm.index`.
 
 ### Kernel build fails: `elfutils not found`
 

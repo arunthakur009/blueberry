@@ -37,7 +37,7 @@ If any check fails, the operation aborts and nothing is written.
 `bpm` reads `/etc/bpm/repos.conf`. The default points at the official mirror:
 
 ```
-https://repo.mmzsigmond.me/
+https://repo.blueberrylinux.org/
 ```
 
 You can add or replace mirrors — including your own (see

@@ -6,7 +6,7 @@
 # downloads ~20 MB and unpacks it — no multi-hour kernel compile on small boxes.
 #
 # Usage: fetch-kernel.sh <bootdir> <stagedir> <linux_version> <localversion> <arch>
-# Env:   KERNEL_BASE_URL  (default https://repo.mmzsigmond.me/kernel)
+# Env:   KERNEL_BASE_URL  (default https://repo.blueberrylinux.org/kernel)
 #
 # Layout of the artifact (zstd tarball, rooted):
 #   boot/vmlinuz
@@ -20,7 +20,7 @@ STAGEDIR=${2:?missing stagedir}
 VER=${3:?missing linux_version}
 LOCALVER=${4:?missing localversion}
 ARCH=${5:?missing arch}
-BASE_URL=${KERNEL_BASE_URL:-https://repo.mmzsigmond.me/kernel}
+BASE_URL=${KERNEL_BASE_URL:-https://repo.blueberrylinux.org/kernel}
 
 ART="blueberry-kernel-${VER}${LOCALVER}-${ARCH}.tar.zst"
 URL="$BASE_URL/$ART"

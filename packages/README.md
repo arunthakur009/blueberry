@@ -103,7 +103,7 @@ Index line format: `name|version|filename|sha256|deps|size|desc`. The signing
 key is `$BPM_SIGN_KEY` (default `~/.config/bpm/repo-ed25519.pem`). This is the
 **only** indexer — do not point a `.pkg.tar.zst` indexer at the repo (it writes
 an empty index and clobbers it). Deploy of the built `.bpm`s + re-index onto the
-live mirror (`repo.mmzsigmond.me`) is covered in `doc/DEPLOY.md`.
+live mirror (`repo.blueberrylinux.org`) is covered in `doc/DEPLOY.md`.
 
 > Release ISOs are **not** hosted on the mirror — it serves only `.bpm` packages
 > plus the pinned kernel/glibc artifacts.

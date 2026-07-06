@@ -15,7 +15,7 @@ built and staged locally, and CI only **publishes a GitHub Release**.
    becomes the tag (else `beta-<date>-<shortsha>`), and the release is marked
    **pre-release** unless the message contains `[RELEASE:stable]`.
 2. **Fetches the images** listed in `release/isos.sha256` from the mirror
-   (`https://repo.mmzsigmond.me/isos/<name>`) and **verifies** them against that
+   (`https://repo.blueberrylinux.org/isos/<name>`) and **verifies** them against that
    committed manifest (`sha256sum -c`). A tampered or truncated image fails the
    build.
 3. **Creates the release** with `gh release create`, attaching the verified

@@ -74,7 +74,7 @@ unit immediately. Native `.bpm` recipes declare this once:
 `/etc/bpm/repos.conf` — one line per repo, origin first then mirrors:
 
 ```
-core https://repo.mmzsigmond.me http://mirror1.lan http://mirror2.lan
+core https://repo.blueberrylinux.org http://mirror1.lan http://mirror2.lan
 ```
 
 `bpm update` and downloads try each URL in turn and fail over when one is

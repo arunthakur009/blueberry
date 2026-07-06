@@ -46,11 +46,13 @@ BASE_PKGS   ?= ncurses bash
 #              rootfs (STAGEDIR) changes. The systemd runtime closure below is
 #              baked into the base image so PID 1 has everything it needs.
 INIT ?= systemd
-# xz/zstd/lz4 are not standalone packages — their libs (liblzma/libzstd/liblz4)
-# are bundled into the base image from the host (see etc/bpm/provided) and pulled
-# into the rootfs via systemd's ldd closure in bundle-glibc.
+# xz/zstd/lz4 are proper tracked base packages: their CLIs + libs (liblzma/
+# libzstd/liblz4) come from the container-built packages, so `bpm upgrade` can
+# patch them (liblzma CVEs matter) and the versions are reproducible — not the
+# build host's. bundle-glibc sources from the staged rootfs (SYSROOT=STAGEDIR),
+# so it finds these package libs already in place and does not overwrite them.
 SYSTEMD_BASE_PKGS := systemd util-linux coreutils libseccomp kmod dbus acl \
-                     cryptsetup libcap libcap-ng readline file zlib bzip2 expat \
+                     cryptsetup libcap libcap-ng readline file zlib xz zstd lz4 bzip2 expat \
                      attr device-mapper json-c openssl popt openssh pam glibc-locales gmp \
                      iproute2 iputils libmnl wpa_supplicant linux-firmware networkmanager ufw \
                      grep sed gawk findutils gzip tar diffutils less which nano vim sudo tzdata kbd \

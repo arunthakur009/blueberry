@@ -15,7 +15,7 @@ make kernel        # fetches the pinned prebuilt kernel — no multi-hour compil
 ```
 
 The artifact lives at
-`https://repo.mmzsigmond.me/kernel/blueberry-kernel-<version>-<arch>.tar.zst`
+`https://repo.blueberrylinux.org/kernel/blueberry-kernel-<version>-<arch>.tar.zst`
 and is cached locally, so subsequent builds don't even re-download it. Small
 machines never have to build a kernel.
 

@@ -50,7 +50,7 @@ the mirror and re-index as above.
 ## Serving it
 
 Any static HTTP(S) server works. The official mirror sits behind Cloudflare at
-`https://repo.mmzsigmond.me/` (packages at the root, no `/x86_64`). When testing
+`https://repo.blueberrylinux.org/` (packages at the root, no `/x86_64`). When testing
 through a CDN, bust the cache:
 
 ```sh
