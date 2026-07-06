@@ -301,6 +301,9 @@ _do_install:
 	@ln -sf /sbin/runit-init $(STAGEDIR)/init 2>/dev/null || true
 	@# bpm package manager (Rust, src/bpm-rs) + zstd helper
 	@ARCH=$(ARCH) sh $(TOPDIR)/tools/pkg/build-bpm.sh $(STAGEDIR)/usr/bin/bpm
+	@# Register bpm in its own DB so `bpm list`/`bpm upgrade` track the package
+	@# manager itself (it is built from source here, not extracted from a .bpm).
+	@sh $(TOPDIR)/tools/pkg/seed-installed-db.sh $(STAGEDIR) $(TOPDIR)/packages/bpm/bpm.toml usr/bin/bpm
 	@install -Dm755 $$(command -v zstd) $(STAGEDIR)/usr/bin/zstd
 	@# CA trust store so bpm and curl can verify HTTPS (rustls TLS in bpm).
 	@install -Dm644 $$(readlink -f /etc/ssl/certs/ca-certificates.crt) \
