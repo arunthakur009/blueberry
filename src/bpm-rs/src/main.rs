@@ -41,7 +41,6 @@ fn main() -> ExitCode {
         "why" => cmd_why(&cfg, rest),
         "depends" | "deptree" => cmd_depends(&cfg, rest),
         "files" => cmd_files(&cfg, rest),
-        "owns" => cmd_owns(&cfg, rest),
         "-h" | "--help" | "help" => {
             usage();
             Ok(())
@@ -82,7 +81,6 @@ fn usage() {
          \x20 bpm why     <name>                       why a package is installed (reverse deps)\n\
          \x20 bpm depends <name>                       show a package's dependency tree\n\
          \x20 bpm files   <name>                       list files a package owns\n\
-         \x20 bpm owns    <path>                       which package owns a path\n\
          \x20 bpm clean   [--all]                      prune cached downloads (keep 2 newest/pkg)\n\n\
          Flags: -f/--force  skip space/conflict/reverse-dep checks.\n\
          Env:   BPM_ROOT=<dir> installs into a staging root instead of /.\n",
@@ -211,17 +209,31 @@ fn parallel_fetch(
     let next = AtomicUsize::new(0);
     let slots: Vec<Mutex<Option<Result<std::path::PathBuf, String>>>> =
         (0..plan.len()).map(|_| Mutex::new(None)).collect();
+    let progress = net::Progress::new(plan.len());
     std::thread::scope(|s| {
-        for _ in 0..jobs {
-            s.spawn(|| loop {
-                let i = next.fetch_add(1, Ordering::Relaxed);
-                if i >= plan.len() {
-                    break;
-                }
-                let r = repo::fetch(cfg, &plan[i].0);
-                *slots[i].lock().unwrap() = Some(r);
-            });
+        let workers: Vec<_> = (0..jobs)
+            .map(|_| {
+                s.spawn(|| loop {
+                    let i = next.fetch_add(1, Ordering::Relaxed);
+                    if i >= plan.len() {
+                        break;
+                    }
+                    let r = repo::fetch(cfg, &plan[i].0, Some(&progress));
+                    if r.is_ok() {
+                        progress.finish_pkg();
+                    }
+                    *slots[i].lock().unwrap() = Some(r);
+                })
+            })
+            .collect();
+        // A monitor thread repaints the aggregate progress line while the workers
+        // stream; stop it once every worker is done.
+        let mon = s.spawn(|| progress.run());
+        for w in workers {
+            let _ = w.join();
         }
+        progress.stop();
+        let _ = mon.join();
     });
     let mut paths = Vec::with_capacity(plan.len());
     for slot in slots {
@@ -282,7 +294,7 @@ fn install_name(
         }
     }
     println!(":: downloading {} {}", entry.name, entry.version);
-    let path = repo::fetch(cfg, &entry)?;
+    let path = repo::fetch(cfg, &entry, None)?;
     pkg::install_file(cfg, &path, force).map_err(|e| e.to_string())?;
     if explicit {
         db::mark_explicit(cfg, name);
@@ -532,7 +544,7 @@ fn cmd_update(cfg: &Config) -> Result<(), String> {
         let mut got = false;
         for url in it {
             println!(":: syncing '{repo}' from {url}");
-            if let Err(e) = net::get(&format!("{url}/bpm.index"), &tmp) {
+            if let Err(e) = net::get(&format!("{url}/bpm.index"), &tmp, None) {
                 eprintln!("bpm: warning: mirror unreachable: {url} ({e})");
                 continue;
             }
@@ -548,7 +560,7 @@ fn cmd_update(cfg: &Config) -> Result<(), String> {
             // index unless BPM_ALLOW_UNSIGNED is set.
             if sig::required() {
                 let sigtmp = cfg.index.with_extension("sig");
-                let ok = net::get(&format!("{url}/bpm.index.sig"), &sigtmp).is_ok()
+                let ok = net::get(&format!("{url}/bpm.index.sig"), &sigtmp, None).is_ok()
                     && std::fs::read(&sigtmp)
                         .map(|s| sig::verify_index(&body, &s))
                         .unwrap_or(false);
@@ -610,7 +622,7 @@ fn cmd_upgrade(cfg: &Config) -> Result<(), String> {
     let mut seen = HashSet::new();
     let mut ok = 0;
     for (_, _, _, e) in &plan {
-        let path = match repo::fetch(cfg, e) {
+        let path = match repo::fetch(cfg, e, None) {
             Ok(p) => p,
             Err(err) => {
                 eprintln!("bpm: warning: {err}");
@@ -705,20 +717,6 @@ fn cmd_files(cfg: &Config, args: &[String]) -> Result<(), String> {
         println!("/{f}");
     }
     Ok(())
-}
-
-fn cmd_owns(cfg: &Config, args: &[String]) -> Result<(), String> {
-    if args.is_empty() {
-        return Err("usage: bpm owns <path>".into());
-    }
-    let rel = args[0].trim_start_matches('/');
-    match db::owner(cfg, rel) {
-        Some(n) => {
-            println!("/{rel} is owned by {n}");
-            Ok(())
-        }
-        None => Err(format!("no package owns /{rel}")),
-    }
 }
 
 /// Explain why a package is on the system: which installed packages require it,

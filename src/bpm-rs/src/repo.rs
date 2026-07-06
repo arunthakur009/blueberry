@@ -7,7 +7,7 @@ use std::path::PathBuf;
 
 /// Download `entry`'s file from a mirror of its repo, verify the checksum, and
 /// return the cached path. Returns Err with a message on total failure.
-pub fn fetch(cfg: &Config, entry: &Entry) -> Result<PathBuf, String> {
+pub fn fetch(cfg: &Config, entry: &Entry, prog: Option<&net::Progress>) -> Result<PathBuf, String> {
     let out = cfg.cache.join(&entry.filename);
 
     // Already cached and current?
@@ -30,7 +30,7 @@ pub fn fetch(cfg: &Config, entry: &Entry) -> Result<PathBuf, String> {
     let mut got = false;
     for m in &mirrors {
         let url = format!("{m}/{}", entry.filename);
-        match net::get(&url, &out) {
+        match net::get(&url, &out, prog) {
             Ok(()) => {
                 got = true;
                 break;

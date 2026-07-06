@@ -17,7 +17,6 @@ bpm search  <term>                       search the repo index
 bpm list                                 list installed packages
 bpm info    <name>                       show package metadata
 bpm files   <name>                       list files a package owns
-bpm owns    <path>                       which package owns a path
 ```
 
 `BPM_ROOT=<dir>` installs into a staging root instead of `/` (used for image
@@ -121,6 +120,5 @@ served. Builds run parallel across all cores (`-j$(nproc)`).
 bpm update
 bpm install wireguard-tools     # pulls deps, verifies checksums, installs
 bpm list
-bpm owns /usr/bin/wg
 bpm remove wireguard-tools
 ```

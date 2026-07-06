@@ -83,16 +83,6 @@ pub fn file_owners(cfg: &Config, skip: &str) -> std::collections::HashMap<String
     map
 }
 
-/// Which installed package owns `rel` (a path with no leading slash).
-pub fn owner(cfg: &Config, rel: &str) -> Option<String> {
-    for name in installed_names(cfg) {
-        if read_files(cfg, &name).iter().any(|f| f == rel) {
-            return Some(name);
-        }
-    }
-    None
-}
-
 /// Remove an installed package's files from disk (deepest first), pruning empty
 /// parent directories — the same teardown the C bpm does before an upgrade.
 pub fn remove_files(cfg: &Config, name: &str) {
