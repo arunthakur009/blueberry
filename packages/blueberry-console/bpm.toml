@@ -1,6 +1,6 @@
 [package]
 name     = "blueberry-console"
-version  = "0.1.1"
+version  = "0.1.2"
 release  = 1
 summary  = "First-party web console to manage a Blueberry box (base layer)"
 homepage = "https://github.com/zsigisti/blueberry"
@@ -33,6 +33,48 @@ install -Dm644 /dev/stdin "$pkgdir/etc/pam.d/blueberry-console" <<'EOF'
 auth     required pam_unix.so
 account  required pam_unix.so
 EOF
+
+# Daemon config (read by the unit via EnvironmentFile). Ships LAN-accessible.
+install -Dm644 /dev/stdin "$pkgdir/etc/default/blueberry-console" <<'EOF'
+# Blueberry Console configuration.
+#
+# BBCONSOLE_BIND — address:port the console listens on.
+#   0.0.0.0:9090   reachable from the LAN  (current setting)
+#   127.0.0.1:9090 localhost only (reach via SSH tunnel or a reverse proxy)
+#
+# !! SECURITY: on 0.0.0.0 the console is plaintext HTTP — the admin password and
+# !! session cookie cross the network unencrypted and can be sniffed on the LAN.
+# !! PAM login is still required, but for real use put TLS in front: see the
+# !! example at /usr/share/blueberry-console/nginx-console.conf and switch this
+# !! back to 127.0.0.1:9090 so only the proxy talks to the daemon.
+BBCONSOLE_BIND=0.0.0.0:9090
+
+# Only root + members of this group may log in.
+BBCONSOLE_ADMIN_GROUP=wheel
+EOF
+
+# Ready-to-use TLS reverse-proxy vhost (the recommended way to expose it).
+install -Dm644 /dev/stdin "$pkgdir/usr/share/blueberry-console/nginx-console.conf" <<'EOF'
+# Blueberry Console over HTTPS. Put the daemon back on 127.0.0.1:9090
+# (/etc/default/blueberry-console), generate a cert, drop this in
+# /etc/nginx/conf.d/, and reload nginx:
+#
+#   openssl req -x509 -newkey rsa:2048 -nodes -days 3650 \
+#     -keyout /etc/ssl/private/console.key -out /etc/ssl/certs/console.crt \
+#     -subj "/CN=$(hostname)"
+#   systemctl reload nginx
+server {
+    listen 443 ssl;
+    server_name _;
+    ssl_certificate     /etc/ssl/certs/console.crt;
+    ssl_certificate_key /etc/ssl/private/console.key;
+    location / {
+        proxy_pass http://127.0.0.1:9090;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $remote_addr;
+    }
+}
+EOF
 # systemd unit (opt-in enable).
 install -Dm644 /dev/stdin "$pkgdir/usr/lib/systemd/system/blueberry-console.service" <<'EOF'
 [Unit]
@@ -41,8 +83,9 @@ Documentation=https://github.com/zsigisti/blueberry (doc/WEBUI.md)
 After=network.target
 
 [Service]
-# Privileged by design: it manages services/packages, so it runs as root and
-# binds 127.0.0.1 only. Put a TLS reverse proxy in front to expose it.
+# Privileged by design (manages services/packages) → runs as root. The bind
+# address comes from /etc/default/blueberry-console (BBCONSOLE_BIND).
+EnvironmentFile=-/etc/default/blueberry-console
 ExecStart=/usr/bin/bbconsole
 Restart=on-failure
 # Modest hardening (must keep the ability to drive systemctl/bpm).
