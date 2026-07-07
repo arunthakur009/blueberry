@@ -23,6 +23,10 @@ controlled — from pinned source, through a reproducible build, to a signed mir
 - **Audit the userland.** Everything in the live CLI is a single busybox
   binary plus the scripts in `src/initramfs/`. There is no opaque package
   database to trust.
+- **Trust boundary.** The official **core** mirror (project-signed binaries) and
+  **BUR** (community recipes you build yourself) are deliberately separate trust
+  models — see [REPO-TRUST.md](REPO-TRUST.md). Community content must never be
+  signed by the core key or served from the core mirror.
 
 ---
 
