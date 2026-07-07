@@ -55,7 +55,11 @@ zstd -dcq "$BPM" | tar -tf - \
     | sed 's#^\./##' > "$DB/files"
 
 if [ "$MODE" != "--record-only" ]; then
-    zstd -dcq "$BPM" | tar -x -C "$STAGE" --exclude .BPM
+    # -p preserves setuid/setgid/sticky mode bits. Without it, extracting as an
+    # unprivileged build user silently drops them, so sudo/su/mount/passwd land
+    # as 0755 (non-setuid) in the rootfs and can't elevate for non-root users.
+    # The image step later forces root ownership but keeps the (preserved) mode.
+    zstd -dcq "$BPM" | tar -xp -C "$STAGE" --exclude .BPM
 fi
 
 ver=$(python3 -c "import sys,tomllib;m=tomllib.load(open(sys.argv[1],'rb'));print(f\"{m.get('version','')}-{m.get('release','')}\")" "$tmp/.BPM")

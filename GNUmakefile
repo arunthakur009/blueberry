@@ -291,12 +291,13 @@ _do_install:
 	@mkdir -p $(STAGEDIR)/etc
 	@cp -a $(ETCDIR)/. $(STAGEDIR)/etc/
 	@# Create FHS directories
-	@for d in proc sys dev dev/pts dev/shm run tmp var/log var/empty \
-	          var/spool/cron/crontabs root home mnt srv boot \
+	@for d in proc sys dev dev/pts dev/shm run tmp var/tmp var/log var/cache \
+	          var/empty var/spool/cron/crontabs root home mnt srv boot \
 	          usr/local/bin usr/local/sbin usr/local/lib; do \
 	    mkdir -p $(STAGEDIR)/$$d; \
 	done
 	@chmod 1777 $(STAGEDIR)/tmp
+	@chmod 1777 $(STAGEDIR)/var/tmp
 	@chmod 700  $(STAGEDIR)/root
 	@chmod 711  $(STAGEDIR)/var/empty
 	@# /init → runit-init

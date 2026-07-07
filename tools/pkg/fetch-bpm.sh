@@ -54,4 +54,6 @@ else
 fi
 
 echo "fetch-bpm: extracting $file -> $DEST"
-zstd -dcq "$cached" | tar -x -C "$DEST" --exclude .BPM 2>/dev/null
+# -p keeps setuid/setgid/sticky bits (see bpm-extract-record.sh); harmless for
+# glibc, correct for any setuid-bearing package fetched this way.
+zstd -dcq "$cached" | tar -xp -C "$DEST" --exclude .BPM 2>/dev/null
