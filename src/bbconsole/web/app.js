@@ -123,10 +123,13 @@ document.getElementById("login-form").addEventListener("submit", async (e) => {
   const r = await fetch("/api/v1/login", {
     method: "POST", credentials: "same-origin",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ token: document.getElementById("token").value }),
+    body: JSON.stringify({
+      username: document.getElementById("username").value,
+      password: document.getElementById("password").value,
+    }),
   });
   if (r.ok) showApp();
-  else { err.textContent = "Invalid token."; err.hidden = false; }
+  else { err.textContent = "Invalid credentials, or account not permitted."; err.hidden = false; }
 });
 
 document.getElementById("logout").addEventListener("click", async () => {

@@ -30,6 +30,7 @@ struct Config {
     web_root: PathBuf,
     token_path: PathBuf,
     audit_path: PathBuf,
+    admin_group: String,
 }
 
 impl Config {
@@ -40,6 +41,8 @@ impl Config {
             web_root: PathBuf::from(env("BBCONSOLE_WEB", "/usr/share/blueberry-console/web")),
             token_path: PathBuf::from(env("BBCONSOLE_TOKEN", "/etc/blueberry/console/token")),
             audit_path: PathBuf::from(env("BBCONSOLE_AUDIT", "/var/log/blueberry-console/audit.log")),
+            // Only root + members of this group may log in via PAM.
+            admin_group: env("BBCONSOLE_ADMIN_GROUP", "wheel"),
         }
     }
 }
@@ -81,7 +84,7 @@ fn handle(st: Arc<State>, mut stream: TcpStream) {
 }
 
 fn authed(st: &State, req: &Request) -> bool {
-    req.cookie("bbc_session").map(|s| st.sessions.check(&s)).unwrap_or(false)
+    req.cookie("bbc_session").and_then(|s| st.sessions.check(&s)).is_some()
 }
 
 fn audit(st: &State, req: &Request, line: &str) {
@@ -107,18 +110,29 @@ fn route(st: &State, req: &Request) -> Response {
 
     // ── auth endpoints ────────────────────────────────────────────────────────
     if path == "/api/v1/login" && req.method == "POST" {
-        let token = req.json().and_then(|v| v.get("token").and_then(|t| t.as_str().map(String::from)));
-        match token.and_then(|t| st.sessions.login(&t)) {
+        let body = req.json().unwrap_or(json!({}));
+        let field = |k: &str| body.get(k).and_then(|v| v.as_str()).unwrap_or("").to_string();
+        // PAM (username+password) is the primary path; token is the fallback.
+        let (sid, who) = if !field("username").is_empty() {
+            let user = field("username");
+            (
+                st.sessions.login_pam(&user, &field("password"), &st.cfg.admin_group),
+                user,
+            )
+        } else {
+            (st.sessions.login_token(&field("token")), "token".to_string())
+        };
+        match sid {
             Some(sid) => {
-                audit(st, req, "login ok");
-                return Response::json(200, json!({ "ok": true })).with_header(
+                audit(st, req, &format!("login ok user={who}"));
+                return Response::json(200, json!({ "ok": true, "user": who })).with_header(
                     "Set-Cookie",
                     &format!("bbc_session={sid}; HttpOnly; SameSite=Strict; Path=/; Max-Age=3600"),
                 );
             }
             None => {
-                audit(st, req, "login FAILED");
-                return Response::error(401, "invalid token");
+                audit(st, req, &format!("login FAILED user={who}"));
+                return Response::error(401, "invalid credentials");
             }
         }
     }

@@ -1,16 +1,17 @@
 [package]
 name     = "blueberry-console"
-version  = "0.1.0"
+version  = "0.1.1"
 release  = 1
 summary  = "First-party web console to manage a Blueberry box (base layer)"
 homepage = "https://github.com/zsigisti/blueberry"
 license  = ["GPL-3.0-or-later"]
 arch     = ["x86_64"]
 
-# Privileged API daemon (wraps systemctl/bpm/proc) + a static SPA. TLS/exposure
-# is a reverse proxy's job; the daemon binds localhost. [[containers-podman]]
-depends     = ["glibc", "gcc-libs", "systemd"]
-makedepends = ["rust"]
+# Privileged API daemon (wraps systemctl/bpm/proc) + a static SPA. Authenticates
+# system users via PAM (like Proxmox). TLS/exposure is a reverse proxy's job; the
+# daemon binds localhost. [[containers-podman]]
+depends     = ["glibc", "gcc-libs", "systemd", "pam"]
+makedepends = ["rust", "pam", "clang"]
 options     = ["!lto"]
 
 [steps]
@@ -26,6 +27,12 @@ cd bbcsrc
 install -Dm755 target/release/bbconsole "$pkgdir/usr/bin/bbconsole"
 # Static frontend.
 for f in web/*; do install -Dm644 "$f" "$pkgdir/usr/share/blueberry-console/$f"; done
+# PAM service used by the console to authenticate system users (checks /etc/shadow
+# via pam_unix; swap in an @include of the system stack for faillock/etc).
+install -Dm644 /dev/stdin "$pkgdir/etc/pam.d/blueberry-console" <<'EOF'
+auth     required pam_unix.so
+account  required pam_unix.so
+EOF
 # systemd unit (opt-in enable).
 install -Dm644 /dev/stdin "$pkgdir/usr/lib/systemd/system/blueberry-console.service" <<'EOF'
 [Unit]

@@ -10,8 +10,9 @@
   <div id="login" class="login" hidden>
     <form id="login-form" class="card">
       <h1>🫐 Blueberry Console</h1>
-      <p class="muted">Enter the admin token (<code>/etc/blueberry/console/token</code>).</p>
-      <input id="token" type="password" placeholder="admin token" autocomplete="off" required>
+      <p class="muted">Sign in with your system account (root or a member of the admin group).</p>
+      <input id="username" type="text" placeholder="username" autocomplete="username" autocapitalize="none" required>
+      <input id="password" type="password" placeholder="password" autocomplete="current-password" required>
       <button type="submit">Sign in</button>
       <p id="login-error" class="error" hidden></p>
     </form>

@@ -1,12 +1,15 @@
-//! Authentication for the console: a bootstrap admin token exchanged for a
-//! short-lived in-memory session cookie.
+//! Authentication for the console. Two ways in, both ending in the same
+//! short-lived in-memory session cookie:
 //!
-//! Base-layer model (extensible): on first start the daemon generates a random
-//! admin token into a root-only file (`/etc/blueberry/console/token`). The admin
-//! reads it (as root) and logs in once; the daemon hands back an opaque session
-//! cookie tracked in memory with an idle expiry. Every API call re-checks the
-//! session. PAM / per-user accounts + roles are the natural next layer and slot
-//! in behind `login()` without changing the API surface.
+//!   1. PAM (primary, Proxmox-style) — a real system user authenticates with
+//!      their password against /etc/shadow through the PAM stack, then must pass
+//!      an authorization check (root, or a member of the admin group) to actually
+//!      manage the box. Authentication ≠ authorization.
+//!   2. Bootstrap token (fallback/automation) — on first start the daemon writes
+//!      a random admin token to a root-only file; handy for headless setup before
+//!      an admin account exists, or for scripts.
+//!
+//! Every API call re-checks the session (1h idle expiry).
 
 use std::collections::HashMap;
 use std::fs;
@@ -61,9 +64,53 @@ pub fn load_or_create_token(path: &Path) -> std::io::Result<String> {
     Ok(token)
 }
 
+/// Authenticate a system user's password via PAM (service `blueberry-console`,
+/// falling back to `login`). Returns true only if PAM accepts the credentials.
+pub fn pam_authenticate(user: &str, pass: &str) -> bool {
+    // Reject obviously bogus usernames before touching PAM.
+    if user.is_empty() || !user.bytes().all(|b| b.is_ascii_alphanumeric() || b"-_.".contains(&b)) {
+        return false;
+    }
+    for service in ["blueberry-console", "login"] {
+        if let Ok(mut client) = pam::Client::with_password(service) {
+            client.conversation_mut().set_credentials(user, pass);
+            if client.authenticate().is_ok() {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// Authorization: only root or members of the admin group may manage the box.
+/// (PAM says "valid user + password"; this says "allowed to be here".)
+pub fn is_admin(user: &str, admin_group: &str) -> bool {
+    if user == "root" {
+        return true;
+    }
+    // Membership via /etc/group: "<group>:x:<gid>:<members,comma>".
+    if let Ok(groups) = fs::read_to_string("/etc/group") {
+        for line in groups.lines() {
+            let mut f = line.split(':');
+            if f.next() == Some(admin_group) {
+                if let Some(members) = f.nth(2) {
+                    return members.split(',').any(|m| m == user);
+                }
+            }
+        }
+    }
+    false
+}
+
 pub struct Sessions {
     admin_token: String,
-    live: Mutex<HashMap<String, Instant>>, // session id -> last-seen
+    live: Mutex<HashMap<String, Session>>, // session id -> session
+}
+
+#[derive(Clone)]
+pub struct Session {
+    pub user: String,
+    pub seen: Instant,
 }
 
 impl Sessions {
@@ -71,26 +118,43 @@ impl Sessions {
         Sessions { admin_token, live: Mutex::new(HashMap::new()) }
     }
 
-    /// Exchange the admin token for a new session id, or None if it's wrong.
-    pub fn login(&self, token: &str) -> Option<String> {
-        if !ct_eq(token, &self.admin_token) {
-            return None;
-        }
+    fn start(&self, user: &str) -> String {
         let sid = random_hex();
-        self.live.lock().unwrap().insert(sid.clone(), Instant::now());
-        Some(sid)
+        self.live
+            .lock()
+            .unwrap()
+            .insert(sid.clone(), Session { user: user.to_string(), seen: Instant::now() });
+        sid
     }
 
-    /// True if `sid` names a live, non-expired session (refreshes its timestamp).
-    pub fn check(&self, sid: &str) -> bool {
-        let mut live = self.live.lock().unwrap();
-        // prune expired
-        live.retain(|_, seen| seen.elapsed() < SESSION_TTL);
-        if let Some(seen) = live.get_mut(sid) {
-            *seen = Instant::now();
-            true
+    /// PAM login: authenticate the password, then authorize the user. On success
+    /// returns a new session id.
+    pub fn login_pam(&self, user: &str, pass: &str, admin_group: &str) -> Option<String> {
+        if pam_authenticate(user, pass) && is_admin(user, admin_group) {
+            Some(self.start(user))
         } else {
-            false
+            None
+        }
+    }
+
+    /// Bootstrap-token login (automation / first run).
+    pub fn login_token(&self, token: &str) -> Option<String> {
+        if ct_eq(token, &self.admin_token) {
+            Some(self.start("token"))
+        } else {
+            None
+        }
+    }
+
+    /// The user of a live, non-expired session (refreshes its timestamp), or None.
+    pub fn check(&self, sid: &str) -> Option<String> {
+        let mut live = self.live.lock().unwrap();
+        live.retain(|_, s| s.seen.elapsed() < SESSION_TTL);
+        if let Some(s) = live.get_mut(sid) {
+            s.seen = Instant::now();
+            Some(s.user.clone())
+        } else {
+            None
         }
     }
 

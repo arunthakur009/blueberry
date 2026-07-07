@@ -30,10 +30,18 @@ the boundary is the whole game:
   or internet exposure itself — put a reverse proxy (nginx, the same pattern the
   mirror uses) in front for TLS and access control, or reach it over an SSH
   tunnel. This keeps crypto/exposure out of the privileged daemon.
-- **Token → session auth.** On first start it writes a random admin token to
-  `/etc/blueberry/console/token` (mode 0600). The admin reads it as root and logs
-  in; the daemon returns an `HttpOnly; SameSite=Strict` session cookie tracked in
-  memory with a 1-hour idle expiry. Every API call is re-checked.
+- **PAM auth (primary, like Proxmox's PAM realm).** A real system user signs in
+  with their username + password, authenticated through PAM
+  (`/etc/pam.d/blueberry-console` → `pam_unix` → `/etc/shadow`). Authentication is
+  then gated by **authorization**: only `root` or members of the admin group
+  (default `wheel`, `BBCONSOLE_ADMIN_GROUP`) may log in — a valid password for a
+  non-admin user is rejected. Success returns an `HttpOnly; SameSite=Strict`
+  session cookie tracked in memory with a 1-hour idle expiry; every API call is
+  re-checked.
+- **Bootstrap token (fallback/automation).** On first start the daemon also
+  writes a random admin token to `/etc/blueberry/console/token` (mode 0600),
+  usable for headless setup before an admin account exists, or for scripts.
+  `POST /api/v1/login {"token": "..."}` instead of username/password.
 - **Small surface.** Pure-std HTTP, hard request-size limits, one request per
   connection, path-traversal guard on static files, security headers + a strict
   CSP on every response.
@@ -45,9 +53,11 @@ Run it:
 
 ```sh
 bpm install blueberry-console
+useradd -m -G wheel admin && passwd admin   # an admin account (or use root)
 systemctl enable --now blueberry-console
-cat /etc/blueberry/console/token        # log in with this
-# then reach http://127.0.0.1:9090 via an SSH tunnel or a TLS reverse proxy
+# reach http://127.0.0.1:9090 via an SSH tunnel or a TLS reverse proxy,
+# and sign in with that system account (or the bootstrap token in
+# /etc/blueberry/console/token for headless/automation).
 ```
 
 ## Far vision (roadmap)
