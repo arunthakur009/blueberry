@@ -47,7 +47,7 @@ clean() { tr '|\n' '  '; }
 
 out="$REPO/bpm.index"
 tmp="$out.tmp.$$"
-trap 'rm -f "$tmp" "$tmp.sig"' EXIT INT TERM
+trap 'rm -f "$tmp" "$tmp.sig" "$tmp.d"' EXIT INT TERM
 : > "$tmp"
 n=0
 for pkg in "$REPO"/*.bpm; do
@@ -66,6 +66,19 @@ for pkg in "$REPO"/*.bpm; do
         "$name" "$ver" "$(basename "$pkg")" "$sha" "$deps" "$size" "$desc" >> "$tmp"
     n=$((n + 1))
 done
+
+# Keep only the NEWEST version per package name. The pool may then hold older
+# .bpm (for local cache / rollback) without an older line shadowing the newer
+# one — index::lookup returns the FIRST matching line. Version-aware selection:
+# sort by name asc then version asc (sort -V), keep the last (=highest) per name.
+# This means you no longer have to delete a superseded .bpm before re-indexing.
+if [ "$n" -gt 0 ]; then
+    sort -t'|' -k1,1 -k2,2V "$tmp" \
+        | awk -F'|' '{cur[$1] = $0} END {for (k in cur) print cur[k]}' \
+        | sort > "$tmp.d"
+    mv "$tmp.d" "$tmp"
+    n=$(grep -c '' "$tmp")
+fi
 
 # Monotonic serial (epoch seconds) — lets clients reject a rolled-back or stale
 # index served by an untrusted mirror (replay/downgrade protection). Carried on

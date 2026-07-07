@@ -61,9 +61,10 @@ To rebuild the **whole** package set at once, `make repo-build` builds every
 `packages/<name>/bpm.toml` into `obj/bpm-out`; then publish those `.bpm` files
 as above.
 
-> Keep only ONE version of each package in the pool — `bpm` resolves the *first*
-> index line for a name, so leaving both `foo-1.0` and `foo-1.1` shadows the
-> newer one. Delete the superseded `.bpm` before re-indexing.
+> The pool may hold multiple versions of a package — `bpmrepo.sh` indexes the
+> **newest version per name** (version-aware), so an older `.bpm` left in the
+> pool never shadows the newer one. You no longer have to delete a superseded
+> `.bpm` before re-indexing; prune old versions only to reclaim disk.
 
 ## Serving it
 

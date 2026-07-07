@@ -45,3 +45,27 @@ ORIGIN_RSYNC=rsync://<origin>/blueberry-repo sh mirror-setup.sh --enable
 
 Then add the mirror's URL to clients' `repos.conf` (nearest first); `bpm` fails
 over across mirrors automatically.
+
+## Scaling notes (forward plan)
+
+Already in place:
+
+- **Multiple versions per name are safe.** `bpmrepo.sh` indexes the newest
+  version per package (version-aware `sort -V`), so leaving old `.bpm` in the
+  pool never shadows the newer one (`bpm` resolves the first index line). Prune
+  old versions only to reclaim disk.
+- **Rollback/replay protection.** The signed index carries a monotonic serial;
+  `bpm` refuses a mirror serving an older one, so an untrusted replica can't
+  hand clients a stale index.
+
+Not yet needed (do when there's a driver, not before — each changes the
+download-URL contract for already-deployed clients, so it needs a compat story):
+
+- **`pool/` split.** Move blobs into `pool/` and keep only metadata at the root.
+  Backward compatible only if the index's filename field carries the `pool/`
+  prefix (clients fetch `<url>/<filename>` verbatim). Defer until the flat pool
+  is actually unwieldy.
+- **Per-arch index.** Today every package is `x86_64` and the arch is in the
+  filename. When `aarch64` servers appear, split into `<arch>/bpm.index` (or
+  `bpm.index.<arch>`) and teach `bpm` to fetch its arch's index. No aarch64
+  target exists yet, so this is deliberately deferred.
