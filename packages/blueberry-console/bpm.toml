@@ -1,16 +1,16 @@
 [package]
 name     = "blueberry-console"
-version  = "0.1.2"
+version  = "0.2.0"
 release  = 1
-summary  = "First-party web console to manage a Blueberry box (base layer)"
+summary  = "First-party web console to manage a Blueberry box (HTTPS, PAM auth)"
 homepage = "https://github.com/zsigisti/blueberry"
 license  = ["GPL-3.0-or-later"]
 arch     = ["x86_64"]
 
-# Privileged API daemon (wraps systemctl/bpm/proc) + a static SPA. Authenticates
-# system users via PAM (like Proxmox). TLS/exposure is a reverse proxy's job; the
-# daemon binds localhost. [[containers-podman]]
-depends     = ["glibc", "gcc-libs", "systemd", "pam"]
+# Privileged API daemon (wraps systemctl/bpm/proc) + a static SPA. Serves HTTPS
+# natively (rustls; self-signed cert auto-generated via openssl on first run) and
+# authenticates system users via PAM (like Proxmox). [[containers-podman]]
+depends     = ["glibc", "gcc-libs", "systemd", "pam", "openssl"]
 makedepends = ["rust", "pam", "clang"]
 options     = ["!lto"]
 
@@ -38,38 +38,34 @@ EOF
 install -Dm644 /dev/stdin "$pkgdir/etc/default/blueberry-console" <<'EOF'
 # Blueberry Console configuration.
 #
-# BBCONSOLE_BIND — address:port the console listens on.
-#   0.0.0.0:9090   reachable from the LAN  (current setting)
-#   127.0.0.1:9090 localhost only (reach via SSH tunnel or a reverse proxy)
+# The console serves HTTPS natively (rustls). On first start it generates a
+# self-signed cert at /etc/blueberry/console/{cert,key}.pem — browsers will warn
+# about it; drop a real cert/key at those paths to replace it.
 #
-# !! SECURITY: on 0.0.0.0 the console is plaintext HTTP — the admin password and
-# !! session cookie cross the network unencrypted and can be sniffed on the LAN.
-# !! PAM login is still required, but for real use put TLS in front: see the
-# !! example at /usr/share/blueberry-console/nginx-console.conf and switch this
-# !! back to 127.0.0.1:9090 so only the proxy talks to the daemon.
+# BBCONSOLE_BIND — address:port to listen on (HTTPS).
+#   0.0.0.0:9090    reachable from the LAN  (current setting)
+#   127.0.0.1:9090  localhost only (reach via SSH tunnel)
 BBCONSOLE_BIND=0.0.0.0:9090
 
 # Only root + members of this group may log in.
 BBCONSOLE_ADMIN_GROUP=wheel
+
+# TLS material (defaults shown; point at a real cert to avoid the browser warning).
+#BBCONSOLE_CERT=/etc/blueberry/console/cert.pem
+#BBCONSOLE_KEY=/etc/blueberry/console/key.pem
 EOF
 
-# Ready-to-use TLS reverse-proxy vhost (the recommended way to expose it).
+# Optional: front it with nginx on :443 (e.g. for a real cert / vhost routing).
+# The daemon already does TLS, so nginx proxies HTTPS→HTTPS to 127.0.0.1:9090.
 install -Dm644 /dev/stdin "$pkgdir/usr/share/blueberry-console/nginx-console.conf" <<'EOF'
-# Blueberry Console over HTTPS. Put the daemon back on 127.0.0.1:9090
-# (/etc/default/blueberry-console), generate a cert, drop this in
-# /etc/nginx/conf.d/, and reload nginx:
-#
-#   openssl req -x509 -newkey rsa:2048 -nodes -days 3650 \
-#     -keyout /etc/ssl/private/console.key -out /etc/ssl/certs/console.crt \
-#     -subj "/CN=$(hostname)"
-#   systemctl reload nginx
 server {
     listen 443 ssl;
     server_name _;
     ssl_certificate     /etc/ssl/certs/console.crt;
     ssl_certificate_key /etc/ssl/private/console.key;
     location / {
-        proxy_pass http://127.0.0.1:9090;
+        proxy_pass https://127.0.0.1:9090;
+        proxy_ssl_verify off;               # daemon uses a self-signed cert
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $remote_addr;
     }

@@ -5,8 +5,7 @@
 //! proxy's job (see doc/WEBUI.md); this daemon binds localhost.
 
 use std::collections::HashMap;
-use std::io::{BufRead, BufReader, Read, Write};
-use std::net::TcpStream;
+use std::io::{BufRead, Write};
 
 const MAX_HEADERS: usize = 32 * 1024;
 const MAX_BODY: usize = 2 * 1024 * 1024; // 2 MiB request cap
@@ -44,10 +43,9 @@ impl Request {
     }
 }
 
-/// Read exactly one request. Returns None on EOF or a malformed/oversized request.
-pub fn read_request(stream: &TcpStream) -> Option<Request> {
-    let mut reader = BufReader::new(stream.try_clone().ok()?);
-
+/// Read exactly one request from any buffered stream (plain TCP or TLS).
+/// Returns None on EOF or a malformed/oversized request.
+pub fn read_request<R: BufRead>(reader: &mut R) -> Option<Request> {
     let mut line = String::new();
     if reader.read_line(&mut line).ok()? == 0 {
         return None;
@@ -126,7 +124,7 @@ impl Response {
         self
     }
 
-    pub fn write(&self, stream: &mut TcpStream) {
+    pub fn write<W: Write>(&self, stream: &mut W) {
         let reason = match self.status {
             200 => "OK",
             201 => "Created",
@@ -150,6 +148,8 @@ impl Response {
         head.push_str("X-Content-Type-Options: nosniff\r\n");
         head.push_str("X-Frame-Options: DENY\r\n");
         head.push_str("Referrer-Policy: no-referrer\r\n");
+        // Always-HTTPS: pin the browser to TLS for a year.
+        head.push_str("Strict-Transport-Security: max-age=31536000\r\n");
         head.push_str(
             "Content-Security-Policy: default-src 'self'; style-src 'self' 'unsafe-inline'\r\n",
         );

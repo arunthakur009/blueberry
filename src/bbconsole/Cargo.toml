@@ -9,12 +9,15 @@ license = "GPL-3.0-or-later"
 name = "bbconsole"
 path = "src/main.rs"
 
-# Pure-std HTTP by design (small attack surface); serde_json for the JSON API,
-# and pam to authenticate real system users against /etc/shadow (like Proxmox's
-# PAM realm). TLS + exposure are handled by a reverse proxy in front (nginx).
+# Small, auditable surface: hand-rolled HTTP over rustls TLS (HTTPS by default,
+# no plaintext ever), serde_json for the API, pam to authenticate real system
+# users against /etc/shadow (Proxmox-style). ring is the crypto provider (same
+# one bpm's rustls uses), so the build stays cmake/nasm-free.
 [dependencies]
 serde_json = "1"
 pam = "0.8"
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
+rustls-pemfile = "2"
 
 [profile.release]
 opt-level = 2

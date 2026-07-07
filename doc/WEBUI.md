@@ -26,18 +26,23 @@ This document describes the **base layer** (`src/bbconsole`, package
 The console is **privileged by design** (it manages services and packages), so
 the boundary is the whole game:
 
-- **Localhost only.** `bbconsole` binds `127.0.0.1:9090`. It does **not** do TLS
-  or internet exposure itself — put a reverse proxy (nginx, the same pattern the
-  mirror uses) in front for TLS and access control, or reach it over an SSH
-  tunnel. This keeps crypto/exposure out of the privileged daemon.
+- **HTTPS by default.** `bbconsole` serves TLS natively (rustls); on first start
+  it generates a self-signed cert at `/etc/blueberry/console/{cert,key}.pem`
+  (drop in a real one to replace it). There is **no plaintext mode** — a client
+  speaking HTTP just fails. HSTS is sent on every response. It binds
+  `0.0.0.0:9090` by default so the LAN can reach it over TLS; set
+  `BBCONSOLE_BIND=127.0.0.1:9090` to keep it local. An nginx vhost (on `:443`,
+  for a real cert) is optional, not required.
+- **Brute-force throttle.** After 8 failed logins from an IP within 5 minutes,
+  further attempts are refused (429) until it cools off.
 - **PAM auth (primary, like Proxmox's PAM realm).** A real system user signs in
   with their username + password, authenticated through PAM
   (`/etc/pam.d/blueberry-console` → `pam_unix` → `/etc/shadow`). Authentication is
   then gated by **authorization**: only `root` or members of the admin group
   (default `wheel`, `BBCONSOLE_ADMIN_GROUP`) may log in — a valid password for a
   non-admin user is rejected. Success returns an `HttpOnly; SameSite=Strict`
-  session cookie tracked in memory with a 1-hour idle expiry; every API call is
-  re-checked.
+  session cookie (`HttpOnly; Secure; SameSite=Strict`) tracked in memory with a
+  1-hour idle expiry; every API call is re-checked.
 - **Bootstrap token (fallback/automation).** On first start the daemon also
   writes a random admin token to `/etc/blueberry/console/token` (mode 0600),
   usable for headless setup before an admin account exists, or for scripts.

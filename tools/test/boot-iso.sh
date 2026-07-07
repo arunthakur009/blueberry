@@ -40,9 +40,29 @@ run)
     # Server is headless: route the serial console to this terminal (-nographic).
     # The ISO autologins root on ttyS0, so it drops straight to a shell. Ctrl-A X
     # quits.
+    NET=""
+    if [ -n "${CONSOLE_FWD:-}" ]; then
+        if [ -n "${BRIDGE:-}" ]; then
+            # Bridged: the VM gets its OWN LAN IP (DHCP, or set a static high IP
+            # like .254 inside it). Needs a host bridge + qemu-bridge-helper.
+            NET="-nic bridge,br=${BRIDGE},model=e1000"
+            echo "[run] bridged on ${BRIDGE}: the VM gets its own LAN IP —"
+            echo "      run 'ip a' in the VM, then browse to  https://<vm-ip>:9090"
+        else
+            # User-mode NAT + host port-forwards on ALL interfaces, so the LAN can
+            # reach the console via THIS host's IP. (For a dedicated VM IP, set
+            # BRIDGE=<iface>.)
+            NET="-nic user,model=e1000,hostfwd=tcp:0.0.0.0:2222-:22,hostfwd=tcp:0.0.0.0:9090-:9090"
+            hostip=$(ip route get 1.1.1.1 2>/dev/null | grep -oE 'src [0-9.]+' | awk '{print $2}')
+            echo "[run] LAN access via this host: browse to  https://${hostip:-<host-ip>}:9090"
+        fi
+        echo "[run] first, in the VM shell, install + start the console:"
+        echo "      bpm install -y blueberry-console && systemctl enable --now blueberry-console"
+    fi
     echo "[run] booting $EDITION ISO headless on serial (Ctrl-A X to quit)"
+    # shellcheck disable=SC2086
     exec qemu-system-x86_64 $ACCEL -m "$MEM" -smp "$SMP" -cdrom "$ISO" \
-        -nographic -boot d
+        $NET -nographic -boot d
     ;;
 test)
     # ready marker per edition

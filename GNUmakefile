@@ -427,6 +427,14 @@ test:
 run-server:
 	@[ -f $(SERVER_ISO) ] || $(MAKE) server-iso
 	@bash $(TOPDIR)/tools/test/boot-iso.sh run  $(SERVER_ISO) server
+
+# Like run-server, but forwards the console (9090) + SSH (2222) to the LAN so you
+# can reach the Blueberry Console at https://<this-host-ip>:9090 from any machine
+# on the network. Set BRIDGE=<iface> to instead give the VM its own LAN IP.
+.PHONY: run-server-console
+run-server-console:
+	@[ -f $(SERVER_ISO) ] || $(MAKE) server-iso
+	@CONSOLE_FWD=1 bash $(TOPDIR)/tools/test/boot-iso.sh run $(SERVER_ISO) server
 test-server:
 	@[ -f $(SERVER_ISO) ] || $(MAKE) server-iso
 	@bash $(TOPDIR)/tools/test/boot-iso.sh test $(SERVER_ISO) server

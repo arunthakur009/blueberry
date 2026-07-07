@@ -102,6 +102,38 @@ pub fn is_admin(user: &str, admin_group: &str) -> bool {
     false
 }
 
+/// Per-source-IP failed-login throttle — slows password brute force.
+pub struct Throttle {
+    fails: Mutex<HashMap<String, (u32, Instant)>>,
+}
+
+const MAX_FAILS: u32 = 8;
+const FAIL_WINDOW: Duration = Duration::from_secs(300); // 5 min lockout window
+
+impl Throttle {
+    pub fn new() -> Throttle {
+        Throttle { fails: Mutex::new(HashMap::new()) }
+    }
+
+    /// True if `ip` is allowed another attempt right now.
+    pub fn allowed(&self, ip: &str) -> bool {
+        let mut m = self.fails.lock().unwrap();
+        m.retain(|_, (_, t)| t.elapsed() < FAIL_WINDOW);
+        m.get(ip).map(|(n, _)| *n < MAX_FAILS).unwrap_or(true)
+    }
+
+    pub fn record_fail(&self, ip: &str) {
+        let mut m = self.fails.lock().unwrap();
+        let e = m.entry(ip.to_string()).or_insert((0, Instant::now()));
+        e.0 += 1;
+        e.1 = Instant::now();
+    }
+
+    pub fn clear(&self, ip: &str) {
+        self.fails.lock().unwrap().remove(ip);
+    }
+}
+
 pub struct Sessions {
     admin_token: String,
     live: Mutex<HashMap<String, Session>>, // session id -> session
