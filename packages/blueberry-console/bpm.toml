@@ -1,0 +1,49 @@
+[package]
+name     = "blueberry-console"
+version  = "0.1.0"
+release  = 1
+summary  = "First-party web console to manage a Blueberry box (base layer)"
+homepage = "https://github.com/zsigisti/blueberry"
+license  = ["GPL-3.0-or-later"]
+arch     = ["x86_64"]
+
+# Privileged API daemon (wraps systemctl/bpm/proc) + a static SPA. TLS/exposure
+# is a reverse proxy's job; the daemon binds localhost. [[containers-podman]]
+depends     = ["glibc", "gcc-libs", "systemd"]
+makedepends = ["rust"]
+options     = ["!lto"]
+
+[steps]
+build = '''
+rm -rf bbcsrc
+cp -r "$startdir/../../src/bbconsole" bbcsrc
+cd bbcsrc
+export CARGO_HOME="$srcdir/cargo"
+cargo build --release --locked 2>/dev/null || cargo build --release
+'''
+package = '''
+cd bbcsrc
+install -Dm755 target/release/bbconsole "$pkgdir/usr/bin/bbconsole"
+# Static frontend.
+for f in web/*; do install -Dm644 "$f" "$pkgdir/usr/share/blueberry-console/$f"; done
+# systemd unit (opt-in enable).
+install -Dm644 /dev/stdin "$pkgdir/usr/lib/systemd/system/blueberry-console.service" <<'EOF'
+[Unit]
+Description=Blueberry management console
+Documentation=https://github.com/zsigisti/blueberry (doc/WEBUI.md)
+After=network.target
+
+[Service]
+# Privileged by design: it manages services/packages, so it runs as root and
+# binds 127.0.0.1 only. Put a TLS reverse proxy in front to expose it.
+ExecStart=/usr/bin/bbconsole
+Restart=on-failure
+# Modest hardening (must keep the ability to drive systemctl/bpm).
+NoNewPrivileges=no
+ProtectHome=yes
+ReadWritePaths=/etc/blueberry /var/log/blueberry-console
+
+[Install]
+WantedBy=multi-user.target
+EOF
+'''

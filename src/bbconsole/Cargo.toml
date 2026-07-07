@@ -1,0 +1,22 @@
+[package]
+name = "blueberry-console"
+version = "0.1.0"
+edition = "2021"
+description = "Blueberry management console — base layer (privileged API daemon)"
+license = "GPL-3.0-or-later"
+
+[[bin]]
+name = "bbconsole"
+path = "src/main.rs"
+
+# Pure-std HTTP by design (small attack surface); serde_json is the only runtime
+# dependency, for the JSON API. TLS + exposure are handled by a reverse proxy in
+# front (nginx), so no crypto/async stack in the daemon itself.
+[dependencies]
+serde_json = "1"
+
+[profile.release]
+opt-level = 2
+lto = true
+strip = true
+codegen-units = 1
