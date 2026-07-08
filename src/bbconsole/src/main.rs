@@ -343,8 +343,20 @@ fn api_route(st: &State, req: &Request, rest: &str, peer: &str, sess: &auth::Ses
             "user": sess.user, "csrf": sess.csrf, "sessions": st.sessions.active(),
         })),
         ("GET", "system") => Response::json(200, api::system()),
+        ("GET", "metrics") => Response::json(200, api::metrics()),
         ("GET", "services") => Response::json(200, api::services()),
         ("GET", "packages") => Response::json(200, api::packages()),
+        ("GET", "storage") => Response::json(200, api::storage()),
+        ("GET", "network") => Response::json(200, api::network()),
+
+        // Journald logs: ?lines=<1..500>&priority=<0..7>&unit=<name>
+        ("GET", "logs") => {
+            let lines = query_param(&req.query, "lines").and_then(|s| s.parse().ok()).unwrap_or(150);
+            let priority = query_param(&req.query, "priority").and_then(|s| s.parse().ok());
+            let unit = query_param(&req.query, "unit");
+            let unit_ref = unit.as_deref().filter(|u| valid_unit(u));
+            Response::json(200, api::logs(lines, priority, unit_ref))
+        }
 
         // Write action: /api/v1/services/<action>?unit=<name>
         ("POST", r) if r.starts_with("services/") => {
@@ -359,13 +371,18 @@ fn api_route(st: &State, req: &Request, rest: &str, peer: &str, sess: &auth::Ses
 
         // Far-vision stubs — stable shape, not built yet.
         ("GET", "containers") => Response::json(501, api::not_implemented("containers")),
-        ("GET", "logs") => Response::json(501, api::not_implemented("logs")),
         ("GET", "updates") => Response::json(501, api::not_implemented("updates")),
-        ("GET", "storage") => Response::json(501, api::not_implemented("storage")),
-        ("GET", "network") => Response::json(501, api::not_implemented("network")),
 
         _ => Response::error(404, "no such endpoint"),
     }
+}
+
+/// A syntactically valid systemd unit name (no leading '-', restricted charset)
+/// — used to sanitise the `logs?unit=` filter before it reaches journalctl.
+fn valid_unit(u: &str) -> bool {
+    !u.is_empty()
+        && !u.starts_with('-')
+        && u.bytes().all(|b| b.is_ascii_alphanumeric() || b"-_.@".contains(&b))
 }
 
 fn query_param(query: &str, key: &str) -> Option<String> {

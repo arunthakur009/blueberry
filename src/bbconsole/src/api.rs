@@ -29,17 +29,16 @@ pub fn system() -> Value {
         .filter_map(|s| s.parse().ok())
         .collect();
 
-    // Memory from /proc/meminfo (kB).
-    let mut mem_total = 0u64;
-    let mut mem_avail = 0u64;
+    // Memory + swap from /proc/meminfo (kB).
+    let (mut mem_total, mut mem_avail, mut swap_total, mut swap_free) = (0u64, 0u64, 0u64, 0u64);
     if let Ok(mi) = fs::read_to_string("/proc/meminfo") {
         for l in mi.lines() {
             let mut p = l.split_whitespace();
             match p.next() {
                 Some("MemTotal:") => mem_total = p.next().and_then(|v| v.parse().ok()).unwrap_or(0),
-                Some("MemAvailable:") => {
-                    mem_avail = p.next().and_then(|v| v.parse().ok()).unwrap_or(0)
-                }
+                Some("MemAvailable:") => mem_avail = p.next().and_then(|v| v.parse().ok()).unwrap_or(0),
+                Some("SwapTotal:") => swap_total = p.next().and_then(|v| v.parse().ok()).unwrap_or(0),
+                Some("SwapFree:") => swap_free = p.next().and_then(|v| v.parse().ok()).unwrap_or(0),
                 _ => {}
             }
         }
@@ -55,6 +54,32 @@ pub fn system() -> Value {
         }
     }
 
+    // CPU model + core count from /proc/cpuinfo.
+    let (mut cpu_model, mut cores) = (String::new(), 0u32);
+    if let Ok(ci) = fs::read_to_string("/proc/cpuinfo") {
+        for l in ci.lines() {
+            if l.starts_with("processor") {
+                cores += 1;
+            } else if cpu_model.is_empty() && l.starts_with("model name") {
+                if let Some((_, v)) = l.split_once(':') {
+                    cpu_model = v.trim().to_string();
+                }
+            }
+        }
+    }
+    // Running processes = numeric entries in /proc.
+    let processes = fs::read_dir("/proc")
+        .map(|rd| {
+            rd.filter_map(Result::ok)
+                .filter(|e| {
+                    let n = e.file_name();
+                    let n = n.to_string_lossy();
+                    !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit())
+                })
+                .count()
+        })
+        .unwrap_or(0);
+
     json!({
         "hostname": hostname,
         "os": pretty,
@@ -62,7 +87,216 @@ pub fn system() -> Value {
         "uptime_seconds": uptime as u64,
         "load": load,
         "memory": { "total_kb": mem_total, "available_kb": mem_avail },
+        "swap": { "total_kb": swap_total, "free_kb": swap_free },
+        "cpu": { "model": cpu_model, "cores": cores },
+        "processes": processes,
     })
+}
+
+/// Aggregate + per-core (idle, total) jiffy counters from /proc/stat.
+fn cpu_times() -> ((u64, u64), Vec<(u64, u64)>) {
+    let stat = fs::read_to_string("/proc/stat").unwrap_or_default();
+    let (mut agg, mut cores) = ((0u64, 0u64), Vec::new());
+    for l in stat.lines() {
+        if !l.starts_with("cpu") {
+            break; // cpu lines come first
+        }
+        let mut p = l.split_whitespace();
+        let label = p.next().unwrap_or("");
+        let vals: Vec<u64> = p.filter_map(|v| v.parse().ok()).collect();
+        if vals.len() < 4 {
+            continue;
+        }
+        let idle = vals[3] + vals.get(4).copied().unwrap_or(0); // idle + iowait
+        let total: u64 = vals.iter().sum();
+        if label == "cpu" {
+            agg = (idle, total);
+        } else {
+            cores.push((idle, total));
+        }
+    }
+    (agg, cores)
+}
+
+/// Busy percentage between two /proc/stat samples, rounded to 0.1.
+fn cpu_pct(a: (u64, u64), b: (u64, u64)) -> f64 {
+    let didle = b.0.saturating_sub(a.0) as f64;
+    let dtotal = b.1.saturating_sub(a.1) as f64;
+    if dtotal <= 0.0 {
+        0.0
+    } else {
+        (((1.0 - didle / dtotal) * 100.0).clamp(0.0, 100.0) * 10.0).round() / 10.0
+    }
+}
+
+/// GET /api/v1/metrics — a fresh live sample: overall + per-core CPU%, memory,
+/// swap, load. Samples /proc/stat twice ~120ms apart so the UI can show live
+/// utilisation without the client tracking deltas.
+pub fn metrics() -> Value {
+    let s1 = cpu_times();
+    std::thread::sleep(std::time::Duration::from_millis(120));
+    let s2 = cpu_times();
+    let per_core: Vec<Value> = s1
+        .1
+        .iter()
+        .zip(s2.1.iter())
+        .map(|(a, b)| json!(cpu_pct(*a, *b)))
+        .collect();
+
+    let load: Vec<f64> = fs::read_to_string("/proc/loadavg")
+        .unwrap_or_default()
+        .split_whitespace()
+        .take(3)
+        .filter_map(|s| s.parse().ok())
+        .collect();
+    let (mut mt, mut ma) = (0u64, 0u64);
+    if let Ok(mi) = fs::read_to_string("/proc/meminfo") {
+        for l in mi.lines() {
+            let mut p = l.split_whitespace();
+            match p.next() {
+                Some("MemTotal:") => mt = p.next().and_then(|v| v.parse().ok()).unwrap_or(0),
+                Some("MemAvailable:") => ma = p.next().and_then(|v| v.parse().ok()).unwrap_or(0),
+                _ => {}
+            }
+        }
+    }
+    json!({
+        "cpu_pct": cpu_pct(s1.0, s2.0),
+        "per_core": per_core,
+        "memory": { "total_kb": mt, "available_kb": ma },
+        "load": load,
+    })
+}
+
+/// GET /api/v1/logs — recent journald entries as JSON (bounded, read-only).
+pub fn logs(lines: u32, priority: Option<u8>, unit: Option<&str>) -> Value {
+    let mut args: Vec<String> =
+        vec!["-o".into(), "json".into(), "--no-pager".into(), "-n".into(), lines.clamp(1, 500).to_string()];
+    if let Some(p) = priority {
+        args.push("-p".into());
+        args.push(p.min(7).to_string());
+    }
+    if let Some(u) = unit {
+        if !u.is_empty() {
+            args.push("-u".into());
+            args.push(u.to_string());
+        }
+    }
+    let mut entries = Vec::new();
+    if let Ok(o) = Command::new("journalctl").args(&args).output() {
+        for line in String::from_utf8_lossy(&o.stdout).lines() {
+            let Ok(v) = serde_json::from_str::<Value>(line) else { continue };
+            let get = |k: &str| v.get(k).and_then(|x| x.as_str()).unwrap_or("").to_string();
+            let ts = get("__REALTIME_TIMESTAMP").parse::<u64>().map(|us| us / 1_000_000).unwrap_or(0);
+            // MESSAGE is usually a string, occasionally a byte array (binary log).
+            let msg = match v.get("MESSAGE") {
+                Some(Value::String(s)) => s.clone(),
+                Some(Value::Array(a)) => a.iter().filter_map(|b| b.as_u64()).map(|b| b as u8 as char).collect(),
+                _ => String::new(),
+            };
+            let unit = {
+                let u = get("_SYSTEMD_UNIT");
+                if u.is_empty() { get("SYSLOG_IDENTIFIER") } else { u }
+            };
+            entries.push(json!({
+                "t": ts,
+                "priority": get("PRIORITY").parse::<u8>().unwrap_or(6),
+                "unit": unit,
+                "message": msg,
+            }));
+        }
+    }
+    json!({ "entries": entries })
+}
+
+/// GET /api/v1/storage — mounted filesystems (df) + block devices (lsblk if present).
+pub fn storage() -> Value {
+    let mut filesystems = Vec::new();
+    if let Ok(o) = Command::new("df").args(["-Pk"]).output() {
+        for line in String::from_utf8_lossy(&o.stdout).lines().skip(1) {
+            let f: Vec<&str> = line.split_whitespace().collect();
+            if f.len() >= 6 {
+                filesystems.push(json!({
+                    "source": f[0],
+                    "total": f[1].parse::<u64>().unwrap_or(0) * 1024,
+                    "used": f[2].parse::<u64>().unwrap_or(0) * 1024,
+                    "available": f[3].parse::<u64>().unwrap_or(0) * 1024,
+                    "use_pct": f[4].trim_end_matches('%').parse::<u32>().unwrap_or(0),
+                    "mount": f[5..].join(" "),
+                }));
+            }
+        }
+    }
+    // Block devices — best effort (util-linux lsblk); omitted if unavailable.
+    let mut devices = Vec::new();
+    if let Ok(o) = Command::new("lsblk").args(["-J", "-b", "-o", "NAME,SIZE,TYPE,MOUNTPOINT,FSTYPE"]).output() {
+        if let Ok(v) = serde_json::from_slice::<Value>(&o.stdout) {
+            if let Some(bd) = v.get("blockdevices").and_then(|b| b.as_array()) {
+                devices = bd.clone();
+            }
+        }
+    }
+    json!({ "filesystems": filesystems, "devices": devices })
+}
+
+/// GET /api/v1/network — interfaces (link state, MAC, addresses) + default gateway.
+pub fn network() -> Value {
+    use std::collections::BTreeMap;
+    let mut ifaces: BTreeMap<String, Value> = BTreeMap::new();
+
+    // Addresses (`ip -o addr`): "3: eth0    inet 192.168.0.5/24 ..."
+    if let Ok(o) = Command::new("ip").args(["-o", "addr", "show"]).output() {
+        for line in String::from_utf8_lossy(&o.stdout).lines() {
+            let toks: Vec<&str> = line.split_whitespace().collect();
+            if toks.len() < 4 {
+                continue;
+            }
+            let name = toks[1].trim_end_matches(':').to_string();
+            let e = ifaces.entry(name.clone()).or_insert_with(|| json!({ "name": name, "addrs": [] }));
+            for w in toks.windows(2) {
+                if (w[0] == "inet" || w[0] == "inet6") && !w[1].is_empty() {
+                    e["addrs"].as_array_mut().unwrap().push(json!({ "family": w[0], "address": w[1] }));
+                    break;
+                }
+            }
+        }
+    }
+    // Link state + MAC (`ip -o link`).
+    if let Ok(o) = Command::new("ip").args(["-o", "link", "show"]).output() {
+        for line in String::from_utf8_lossy(&o.stdout).lines() {
+            let toks: Vec<&str> = line.split_whitespace().collect();
+            if toks.len() < 2 {
+                continue;
+            }
+            let name = toks[1].trim_end_matches(':').split('@').next().unwrap_or("").to_string();
+            let up = line.contains("state UP") || line.contains("LOWER_UP");
+            let mut mac = "";
+            for w in toks.windows(2) {
+                if w[0] == "link/ether" {
+                    mac = w[1];
+                    break;
+                }
+            }
+            let e = ifaces.entry(name.clone()).or_insert_with(|| json!({ "name": name, "addrs": [] }));
+            e["up"] = json!(up);
+            if !mac.is_empty() {
+                e["mac"] = json!(mac);
+            }
+        }
+    }
+    // Default gateway.
+    let mut gateway = String::new();
+    if let Ok(o) = Command::new("ip").args(["route", "show", "default"]).output() {
+        let s = String::from_utf8_lossy(&o.stdout);
+        let toks: Vec<&str> = s.split_whitespace().collect();
+        for w in toks.windows(2) {
+            if w[0] == "via" {
+                gateway = w[1].to_string();
+                break;
+            }
+        }
+    }
+    json!({ "interfaces": ifaces.into_values().collect::<Vec<_>>(), "gateway": gateway })
 }
 
 /// GET /api/v1/services — systemd services and their state.

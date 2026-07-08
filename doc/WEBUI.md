@@ -13,13 +13,15 @@ This document describes the **base layer** (`src/bbconsole`, package
   dependency: `serde_json`). It wraps tools that already exist on the box —
   `systemctl`, `bpm`, `/proc` — behind a versioned, authenticated, audited JSON
   API, and serves a single-page frontend.
-- **API** (`/api/v1`): `system` (host/kernel/load/memory), `services`
-  (list + start/stop/restart), `packages` (via `bpm`). Far-vision areas
-  (`containers`, `updates`, `logs`, `storage`, `network`) return `501` with a
-  stable shape so the frontend can grow without churn.
+- **API** (`/api/v1`): `system` (host/CPU/swap/processes), `metrics` (live
+  per-core CPU%, memory, load — sampled server-side), `services` (list +
+  start/stop/restart), `packages` (via `bpm`), `logs` (journald, filterable by
+  priority/unit), `storage` (filesystems + block devices), `network` (interfaces,
+  MACs, addresses, gateway). Remaining far-vision areas (`containers`, `updates`)
+  return `501` with a stable shape so the frontend can grow without churn.
 - **Frontend** — a dependency-free SPA (`/usr/share/blueberry-console/web`):
-  token login, overview dashboard, services panel, packages panel, and stub tabs
-  for the roadmap.
+  a live overview (auto-refreshing CPU/memory/load), plus services, packages,
+  logs, storage, and network panels — and a stub tab per remaining roadmap area.
 
 ## Security model
 
@@ -139,9 +141,11 @@ router, auth, and audit don't change.
 2. **Updates + rollback** — the differentiator. Surface `bpm` updates, and if the
    root is btrfs: snapshot → `bpm upgrade` → one-click rollback if it broke. No
    other console does this for a source-built rolling distro.
-3. **Logs** — journald (`journalctl -o json`), per-unit, follow/tail.
-4. **Storage** — lvm/btrfs/xfs: volumes, subvolumes, snapshots, SMART.
-5. **Network** — nftables/NetworkManager: interfaces, firewall rules, wireguard.
+
+Shipped (0.5.0): **Logs** (journald, priority filter), **Storage** (filesystems +
+block devices), **Network** (interfaces/addresses/gateway), and a **live overview**
+(auto-refreshing per-core CPU / memory / load). Next for each: logs follow/tail +
+per-unit; storage SMART + snapshots; network firewall (nftables) + wireguard.
 
 ## Extending
 

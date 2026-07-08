@@ -100,3 +100,20 @@ table.list td { padding: .45rem .5rem; border-bottom: 1px solid var(--border); v
 .dot { display: inline-block; width: .55rem; height: .55rem; background: var(--off); }
 .dot.ok { background: var(--ok); }
 .dot.off { background: var(--off); }
+.dot.warn { background: #d9a441; }
+.dot.crit { background: var(--err); }
+
+/* wide tables (logs, storage, devices) scroll inside their card, never the page */
+.scroll { overflow-x: auto; }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .88em; }
+
+/* usage bar */
+.bar { position: relative; height: .85rem; min-width: 90px; background: var(--border); }
+.bar > span { position: absolute; inset: 0 auto 0 0; background: var(--accent); }
+.bar.warn > span { background: #d9a441; }
+.bar.crit > span { background: var(--err); }
+
+/* select (log level filter) */
+select { font: inherit; padding: .35rem .6rem; margin-bottom: .9rem; border-radius: 0;
+  background: var(--bg); color: var(--fg); border: 1px solid var(--border); }
+select:focus { outline: none; border-color: var(--accent); }
