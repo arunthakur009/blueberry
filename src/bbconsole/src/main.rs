@@ -103,13 +103,20 @@ fn ensure_cert(cert: &Path, key: &Path) {
     let host = std::fs::read_to_string("/proc/sys/kernel/hostname")
         .map(|s| s.trim().to_string())
         .unwrap_or_else(|_| "blueberry".into());
+    // Build a SAN list that matches how the box is actually reached: localhost,
+    // the hostname, and every global IP the machine holds — so browsing by IP
+    // doesn't hit a name-mismatch on top of the self-signed warning.
+    let san = build_san(&host);
     let ok = Command::new("openssl")
         .args([
-            "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "3650",
+            "req", "-x509", "-newkey", "rsa:4096", "-sha256", "-nodes", "-days", "3650",
             "-keyout", &key.to_string_lossy(),
             "-out", &cert.to_string_lossy(),
-            "-subj", &format!("/CN={host}"),
-            "-addext", "subjectAltName=DNS:localhost,IP:127.0.0.1",
+            "-subj", &format!("/O=Blueberry Linux/OU=Console/CN={host}"),
+            "-addext", &format!("subjectAltName={san}"),
+            "-addext", "basicConstraints=critical,CA:false",
+            "-addext", "keyUsage=critical,digitalSignature,keyEncipherment",
+            "-addext", "extendedKeyUsage=serverAuth",
         ])
         .status()
         .map(|s| s.success())
@@ -120,6 +127,33 @@ fn ensure_cert(cert: &Path, key: &Path) {
     } else {
         eprintln!("bbconsole: WARNING could not generate a cert (is openssl installed?)");
     }
+}
+
+/// Assemble an openssl subjectAltName value: localhost + 127.0.0.1 + the
+/// hostname + every global IPv4/IPv6 address on the box (via `ip -o addr`).
+fn build_san(host: &str) -> String {
+    let mut dns = vec!["localhost".to_string()];
+    if !host.is_empty() && host != "localhost" {
+        dns.push(host.to_string());
+    }
+    let mut ips = vec!["127.0.0.1".to_string(), "::1".to_string()];
+    if let Ok(out) = Command::new("ip").args(["-o", "addr", "show", "scope", "global"]).output() {
+        for line in String::from_utf8_lossy(&out.stdout).lines() {
+            // "N: iface    inet 192.168.0.5/24 ..."  → take the addr before '/'
+            let mut it = line.split_whitespace();
+            while let Some(tok) = it.next() {
+                if tok == "inet" || tok == "inet6" {
+                    if let Some(addr) = it.next().and_then(|a| a.split('/').next()) {
+                        let a = addr.to_string();
+                        if !ips.contains(&a) { ips.push(a); }
+                    }
+                }
+            }
+        }
+    }
+    let mut parts: Vec<String> = dns.iter().map(|d| format!("DNS:{d}")).collect();
+    parts.extend(ips.iter().map(|i| format!("IP:{i}")));
+    parts.join(",")
 }
 
 fn load_tls(cert: &Path, key: &Path) -> Option<Arc<ServerConfig>> {

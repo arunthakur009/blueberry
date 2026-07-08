@@ -28,8 +28,11 @@ the boundary is the whole game:
 
 - **HTTPS by default.** `bbconsole` serves TLS natively (rustls); on first start
   it generates a self-signed cert at `/etc/blueberry/console/{cert,key}.pem`
-  (drop in a real one to replace it). There is **no plaintext mode** — a client
-  speaking HTTP just fails. HSTS is sent on every response. It binds
+  (drop in a real one to replace it). The generated cert is RSA-4096/SHA-256 with
+  proper extensions and a SAN list built from `localhost`, the hostname, and every
+  global IP the box holds — so reaching it by IP doesn't add a name-mismatch on top
+  of the untrusted-CA warning. There is **no plaintext mode** — a client speaking
+  HTTP just fails. HSTS is sent on every response. It binds
   `0.0.0.0:9090` by default so the LAN can reach it over TLS; set
   `BBCONSOLE_BIND=127.0.0.1:9090` to keep it local. An nginx vhost (on `:443`,
   for a real cert) is optional, not required.
@@ -58,11 +61,12 @@ Run it:
 
 ```sh
 bpm install blueberry-console
-useradd -m -G wheel admin && passwd admin   # an admin account (or use root)
 systemctl enable --now blueberry-console
-# reach http://127.0.0.1:9090 via an SSH tunnel or a TLS reverse proxy,
-# and sign in with that system account (or the bootstrap token in
-# /etc/blueberry/console/token for headless/automation).
+# reach https://<host-ip>:9090 (accept the self-signed-cert warning) and sign in
+# with a system account: root (the live ISO ships a documented default password,
+# "blueberry" — change it with `passwd`), or an admin-group user you created with
+#   useradd -m -G wheel admin && passwd admin
+# The bootstrap token in /etc/blueberry/console/token works for headless/automation.
 ```
 
 ## Far vision (roadmap)
