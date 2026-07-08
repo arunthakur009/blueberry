@@ -53,6 +53,7 @@ INIT ?= systemd
 # so it finds these package libs already in place and does not overwrite them.
 SYSTEMD_BASE_PKGS := systemd util-linux coreutils libseccomp kmod dbus acl \
                      cryptsetup libcap libcap-ng readline file zlib xz zstd lz4 bzip2 expat \
+                     pcre2 mpfr gdbm \
                      attr device-mapper json-c openssl popt openssh pam glibc-locales gmp \
                      iproute2 iputils libmnl wpa_supplicant linux-firmware wireless-regdb networkmanager ufw \
                      grep sed gawk findutils gzip tar diffutils less which nano vim sudo tzdata kbd \
@@ -65,6 +66,11 @@ SYSTEMD_BASE_PKGS := systemd util-linux coreutils libseccomp kmod dbus acl \
 # (iputils). The stack itself (systemd-networkd/resolved) is in systemd; these are
 # the diagnostic CLI tools. The base extraction is flat (no dep resolution), so
 # libmnl is listed explicitly; libcap (also needed) is already above.
+# Same reason for the pcre2/mpfr/gdbm line: they are runtime libraries hard-linked
+# by base tools but not otherwise pulled in — pcre2 = grep + iproute2's `ss`
+# (libpcre2-8.so.0), mpfr = gawk (libmpfr.so.6), gdbm = pam's pam_userdb.so.
+# Run `make check-base` (tools/pkg/check-base-closure.sh) after an install to
+# report any base binary whose DT_NEEDED library the base list doesn't provide.
 ifeq ($(INIT),systemd)
   BASE_PKGS += $(SYSTEMD_BASE_PKGS)
 endif
@@ -285,6 +291,13 @@ install: world
 	@echo "[install] rootfs → $(STAGEDIR)"
 	@$(MAKE) -f $(TOPDIR)/GNUmakefile _do_install
 	@touch $(STAMP_INSTALL)
+
+# Verify the assembled base rootfs is self-contained: every base binary can
+# resolve its DT_NEEDED shared libraries from within the base itself. Catches the
+# "flat list forgot a runtime lib" class of bug (grep→pcre2, gawk→mpfr, …).
+.PHONY: check-base
+check-base:
+	@sh $(TOPDIR)/tools/pkg/check-base-closure.sh $(STAGEDIR)
 
 _do_install:
 	@# Copy /etc skeleton
